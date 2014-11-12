@@ -1,5 +1,6 @@
 {-# LANGUAGE Safe #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE PatternGuards #-}
 module SimpleSMT where
 
 import Data.Char(isSpace)
@@ -11,10 +12,17 @@ import System.Exit(ExitCode)
 import qualified Control.Exception as X
 import Control.Concurrent(forkIO)
 import Control.Monad(forever)
+import Text.Read(readMaybe)
+import Data.Ratio((%))
 
 
 -- | Results of checking for satisfiability.
 data SmtRes = Unsat | Unknown | Sat
+              deriving (Eq,Show)
+
+-- | Common values returned by SMT solvers.
+data SmtVal = SmtInt !Integer | SmtReal !Rational | SmtBool Bool
+            | SmtOther SExpr
               deriving (Eq,Show)
 
 -- | S-expressions, which are used in SMTLIB-2.
@@ -142,13 +150,29 @@ solverCheck proc =
               , "  Result: " ++ renderSExpr res ""
               ]
 
--- | Get values from the current model.
+-- | Convert an s-expression to a value.
+sexprToVal :: SExpr -> SmtVal
+sexprToVal expr =
+  case expr of
+    SAtom "true"                    -> SmtBool True
+    SAtom "false"                   -> SmtBool False
+    SAtom txt
+      | Just n <- readMaybe txt     -> SmtInt n
+    SList [ SAtom "-", x ]
+      | SmtInt a <- sexprToVal x    -> SmtInt (negate a)
+    SList [ SAtom "/", x, y ]
+      | SmtInt a <- sexprToVal x
+      , SmtInt b <- sexprToVal y    -> SmtReal (a % b)
+    _ -> SmtOther expr
+
+
+-- | Get the values of some s-expressions.
 -- Only valid after a 'Sat' result.
-solverGetExprs :: SolverProcess -> [SExpr] -> IO [SExpr]
+solverGetExprs :: SolverProcess -> [SExpr] -> IO [SmtVal]
 solverGetExprs proc vals =
   do res <- solverDo proc $ SList [ SAtom "get-value", SList vals ]
      case res of
-       SList xs -> return xs
+       SList xs -> return (map sexprToVal xs)
        _ -> fail $ unlines
                  [ "Unexpected response from the SMT solver:"
                  , "  Exptected: a list"
@@ -157,10 +181,8 @@ solverGetExprs proc vals =
 
 -- | Get the values of some variables in the current model.
 -- Only valid after a 'Sat' result.
-solverGetVars :: SolverProcess -> [String] -> IO [SExpr]
+solverGetVars :: SolverProcess -> [String] -> IO [SmtVal]
 solverGetVars proc xs = solverGetExprs proc (map SAtom xs)
-
-
 
 
 
