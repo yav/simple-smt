@@ -67,13 +67,21 @@ data SolverProcess = SolverProcess
   }
 
 
--- | Start a new solver process, using the given executable and arguments.
-startSolverProcess :: String -> [String] -> IO SolverProcess
-startSolverProcess exe opts =
+-- | Start a new solver process.
+startSolverProcess :: String       {- ^ Executable -}      ->
+                      [String]     {- ^ Argumetns -}       ->
+                      Maybe Logger {- ^ Be verbose here -} ->
+                      IO SolverProcess
+startSolverProcess exe opts mbLog =
   do (hIn, hOut, hErr, h) <- runInteractiveProcess exe opts Nothing Nothing
 
+     let info a = case mbLog of
+                    Nothing -> return ()
+                    Just l  -> logMessage l a
+
      -- XXX: Ignore errors for now.
-     _ <- forkIO $ forever (hGetLine hErr)
+     _ <- forkIO $ forever $ do errs <- hGetLine hErr
+                                info ("[stderr] " ++ errs)
                     `X.catch` \X.SomeException {} -> return ()
 
      getResponse <-
@@ -84,14 +92,17 @@ startSolverProcess exe opts =
                         []     -> (xs, Nothing)
                         y : ys -> (ys, Just y)
 
-     let cmd c = do hPutStrLn hIn $ renderSExpr c ""
+     let cmd c = do let txt = renderSExpr c ""
+                    info ("[send->] " ++ txt)
+                    hPutStrLn hIn txt
                     hFlush hIn
 
          solverDo c =
            do cmd c
               mb <- getResponse
               case mb of
-                Just res -> return res
+                Just res -> do info ("[<-recv] " ++ renderSExpr res "")
+                               return res
                 Nothing  -> fail "Missing response from solver"
 
          solverStop =
