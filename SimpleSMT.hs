@@ -26,7 +26,7 @@ module SimpleSMT
   , pop, popMany
   , declare
   , declareFun
-  , assume
+  , assert
   , check
   , Result(..)
   , getExprs
@@ -269,17 +269,20 @@ popMany proc n = simpleCommand proc [ "push", show n ]
 
 
 -- | Declare a constant.  A common abbreviation for 'declareFun'.
-declare :: Solver -> String -> SExpr -> IO ()
+-- For convenience, returns an the declared name as a constant expression.
+declare :: Solver -> String -> SExpr -> IO SExpr
 declare proc f t = declareFun proc f [] t
 
 -- | Declare a function or a constant.
-declareFun :: Solver -> String -> [SExpr] -> SExpr -> IO ()
+-- For convenience, returns an the declared name as a constant expression.
+declareFun :: Solver -> String -> [SExpr] -> SExpr -> IO SExpr
 declareFun proc f as r =
-  ackCommand proc $ smtFun "declare-fun" [ Atom f, List as, r ]
+  do ackCommand proc $ smtFun "declare-fun" [ Atom f, List as, r ]
+     return (smtConst f)
 
 -- | Assume a fact.
-assume :: Solver -> SExpr -> IO ()
-assume proc e = ackCommand proc $ smtFun "assert" [e]
+assert :: Solver -> SExpr -> IO ()
+assert proc e = ackCommand proc $ smtFun "assert" [e]
 
 -- | Check if the current set of assertion is consistent.
 check :: Solver -> IO Result
