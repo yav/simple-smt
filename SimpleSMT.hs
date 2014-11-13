@@ -134,7 +134,7 @@ data Value =  Bool  !Bool           -- ^ Boolean value
 -- | S-expressions. These are the basic format for SmtLib-2.
 data SExpr  = Atom String
             | List [SExpr]
-              deriving (Eq, Show)
+              deriving (Eq, Ord, Show)
 
 -- | Show an s-expression.
 showsSExpr :: SExpr -> ShowS
@@ -287,7 +287,7 @@ assert proc e = ackCommand proc $ smtFun "assert" [e]
 -- | Check if the current set of assertion is consistent.
 check :: Solver -> IO Result
 check proc =
-  do res <- command proc $ smtConst "check-sat"
+  do res <- command proc (List [ Atom "check-sat" ])
      case res of
        Atom "unsat"   -> return Unsat
        Atom "unknown" -> return Unknown
@@ -327,22 +327,33 @@ sexprToVal expr =
 
 -- | Get the values of some s-expressions.
 -- Only valid after a 'Sat' result.
-getExprs :: Solver -> [SExpr] -> IO [Value]
+getExprs :: Solver -> [SExpr] -> IO [(SExpr, Value)]
 getExprs proc vals =
   do res <- command proc $ List [ Atom "get-value", List vals ]
      case res of
-       List xs -> return (map sexprToVal xs)
+       List xs -> mapM getAns xs
        _ -> fail $ unlines
                  [ "Unexpected response from the SMT solver:"
                  , "  Exptected: a list"
                  , "  Result: " ++ showsSExpr res ""
                  ]
+  where
+  getAns expr =
+    case expr of
+      List [ e, v ] -> return (e, sexprToVal v)
+      _             -> fail $ unlines
+                            [ "Unexpected response from the SMT solver:"
+                            , "  Expected: (expr val)"
+                            , "  Result: " ++ showsSExpr expr ""
+                            ]
 
 -- | Get the values of some variables in the current model.
 -- A special case of 'getExprs'.
 -- Only valid after a 'Sat' result.
-getVars :: Solver -> [String] -> IO [Value]
-getVars proc xs = getExprs proc (map Atom xs)
+getVars :: Solver -> [String] -> IO [(String, Value)]
+getVars proc xs =
+  do ans <- getExprs proc (map Atom xs)
+     return [ (x,e) | (Atom x, e) <- ans ]
 
 
 --------------------------------------------------------------------------------
