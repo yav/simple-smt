@@ -29,14 +29,14 @@ module SimpleSMT
   , assert
   , check
   , Result(..)
-  , getExprs
-  , getVars
+  , getExprs, getExpr
+  , getConsts, getConst
   , Value(..)
 
     -- * Convenienct Functoins for SmtLib-2 Epxressions
-  , smtFam
-  , smtFun
-  , smtConst
+  , fam
+  , fun
+  , const
 
     -- ** Types
   , tInt
@@ -100,7 +100,7 @@ module SimpleSMT
   , store
   ) where
 
-import Prelude hiding (not, and, or, abs, div, mod, concat)
+import Prelude hiding (not, and, or, abs, div, mod, concat, const)
 import qualified Prelude as P
 import Data.Char(isSpace)
 import Data.List(unfoldr)
@@ -175,9 +175,9 @@ data Solver = Solver
 
 
 -- | Start a new solver process.
-newSolver :: String       {- ^ Executable -}             ->
-             [String]     {- ^ Argumetns -}              ->
-             Maybe Logger {- ^ Optional logging herer -} ->
+newSolver :: String       {- ^ Executable -}            ->
+             [String]     {- ^ Argumetns -}             ->
+             Maybe Logger {- ^ Optional logging here -} ->
              IO Solver
 newSolver exe opts mbLog =
   do (hIn, hOut, hErr, h) <- runInteractiveProcess exe opts Nothing Nothing
@@ -277,12 +277,12 @@ declare proc f t = declareFun proc f [] t
 -- For convenience, returns an the declared name as a constant expression.
 declareFun :: Solver -> String -> [SExpr] -> SExpr -> IO SExpr
 declareFun proc f as r =
-  do ackCommand proc $ smtFun "declare-fun" [ Atom f, List as, r ]
-     return (smtConst f)
+  do ackCommand proc $ fun "declare-fun" [ Atom f, List as, r ]
+     return (const f)
 
 -- | Assume a fact.
 assert :: Solver -> SExpr -> IO ()
-assert proc e = ackCommand proc $ smtFun "assert" [e]
+assert proc e = ackCommand proc $ fun "assert" [e]
 
 -- | Check if the current set of assertion is consistent.
 check :: Solver -> IO Result
@@ -347,30 +347,41 @@ getExprs proc vals =
                             , "  Result: " ++ showsSExpr expr ""
                             ]
 
--- | Get the values of some variables in the current model.
+-- | Get the values of some constants in the current model.
 -- A special case of 'getExprs'.
 -- Only valid after a 'Sat' result.
-getVars :: Solver -> [String] -> IO [(String, Value)]
-getVars proc xs =
+getConsts :: Solver -> [String] -> IO [(String, Value)]
+getConsts proc xs =
   do ans <- getExprs proc (map Atom xs)
      return [ (x,e) | (Atom x, e) <- ans ]
+
+
+-- | Get the value of a single expression.
+getExpr :: Solver -> SExpr -> IO Value
+getExpr proc x =
+  do [ (_,v) ] <- getExprs proc [x]
+     return v
+
+-- | Get the value of a single constant.
+getConst :: Solver -> String -> IO Value
+getConst proc x = getExpr proc (Atom x)
 
 
 --------------------------------------------------------------------------------
 
 
 -- | A constant, corresponding to a family indexed by some integers.
-smtFam :: String -> [Integer] -> SExpr
-smtFam f is = List (Atom "_" : Atom f : map (Atom . show) is)
+fam :: String -> [Integer] -> SExpr
+fam f is = List (Atom "_" : Atom f : map (Atom . show) is)
 
 -- | An SMT function.
-smtFun :: String -> [SExpr] -> SExpr
-smtFun f [] = Atom f
-smtFun f as = List (Atom f : as)
+fun :: String -> [SExpr] -> SExpr
+fun f [] = Atom f
+fun f as = List (Atom f : as)
 
--- | An SMT constant.  A special case of 'smtFun'.
-smtConst :: String -> SExpr
-smtConst f = smtFun f []
+-- | An SMT constant.  A special case of 'fun'.
+const :: String -> SExpr
+const f = fun f []
 
 
 -- Types -----------------------------------------------------------------------
@@ -378,26 +389,26 @@ smtConst f = smtFun f []
 
 -- | The type of integers.
 tInt :: SExpr
-tInt = smtConst "Int"
+tInt = const "Int"
 
 -- | The type of booleans.
 tBool :: SExpr
-tBool = smtConst "Bool"
+tBool = const "Bool"
 
 -- | The type of reals.
 tReal :: SExpr
-tReal = smtConst "Real"
+tReal = const "Real"
 
 -- | The type of arrays.
 tArray :: SExpr {- ^ Type of indexes  -} ->
           SExpr {- ^ Type of elements -} ->
           SExpr
-tArray x y = smtFun "Array" [x,y]
+tArray x y = fun "Array" [x,y]
 
 -- | The type of bit vectors.
 tBits :: Integer {- ^ Number of bits -} ->
          SExpr
-tBits w = smtFam "BitVec" [w]
+tBits w = fam "BitVec" [w]
 
 
 
@@ -405,7 +416,7 @@ tBits w = smtFam "BitVec" [w]
 
 -- | Boolean literals.
 bool :: Bool -> SExpr
-bool b = smtConst (if b then "true" else "false")
+bool b = const (if b then "true" else "false")
 
 -- | Integer literals.
 int :: Integer -> SExpr
@@ -421,7 +432,7 @@ real x = realDiv (int (denominator x)) (int (numerator x))
 --     * If the value does not fit in the bits, then the bits will be increased.
 --     * The width should be strictly positive.
 bvBin :: Int {- ^ Width, in bits -} -> Integer {- ^ Value -} -> SExpr
-bvBin w v = smtConst ("#b" ++ bits)
+bvBin w v = const ("#b" ++ bits)
   where
   bits = reverse [ if testBit v n then '1' else '0' | n <- [ 0 .. w - 1 ] ]
 
@@ -433,7 +444,7 @@ bvBin w v = smtConst ("#b" ++ bits)
 --      up so that it is.
 --    * The width should be strictly positive.
 bvHex :: Int {- ^ Width, in bits -} -> Integer {- ^ Value -} -> SExpr
-bvHex w v = smtConst ("#x" ++ padding ++ hex)
+bvHex w v = const ("#x" ++ padding ++ hex)
   where
   hex     = showHex v ""
   padding = replicate (P.div (w + 3) 4 - length hex) '0'
@@ -444,30 +455,30 @@ bvHex w v = smtConst ("#x" ++ padding ++ hex)
 
 -- | Logical negation.
 not :: SExpr -> SExpr
-not p = smtFun "not" [p]
+not p = fun "not" [p]
 
 -- | Conjucntion.
 and :: SExpr -> SExpr -> SExpr
-and p q = smtFun "and" [p,q]
+and p q = fun "and" [p,q]
 
 -- | Disjunction.
 or :: SExpr -> SExpr -> SExpr
-or p q = smtFun "or" [p,q]
+or p q = fun "or" [p,q]
 
 -- | Exclusive-or.
 xor :: SExpr -> SExpr -> SExpr
-xor p q = smtFun "xor" [p,q]
+xor p q = fun "xor" [p,q]
 
 -- | Implication.
 implies :: SExpr -> SExpr -> SExpr
-implies p q = smtFun "=>" [p,q]
+implies p q = fun "=>" [p,q]
 
 
 -- If-then-else ----------------------------------------------------------------
 
 -- | If-then-else.  This is polymorphic and can be used to construct any term.
 ite :: SExpr -> SExpr -> SExpr -> SExpr
-ite x y z = smtFun "ite" [x,y,z]
+ite x y z = fun "ite" [x,y,z]
 
 
 
@@ -476,27 +487,27 @@ ite x y z = smtFun "ite" [x,y,z]
 
 -- | Equality.
 eq :: SExpr -> SExpr -> SExpr
-eq x y = smtFun "=" [x,y]
+eq x y = fun "=" [x,y]
 
 -- | Greather-then
 gt :: SExpr -> SExpr -> SExpr
-gt x y = smtFun ">" [x,y]
+gt x y = fun ">" [x,y]
 
 -- | Less-then.
 lt :: SExpr -> SExpr -> SExpr
-lt x y = smtFun "<" [x,y]
+lt x y = fun "<" [x,y]
 
 -- | Greater-than-or-equal-to.
 geq :: SExpr -> SExpr -> SExpr
-geq x y = smtFun "<=" [x,y]
+geq x y = fun "<=" [x,y]
 
 -- | Less-than-or-equal-to.
 leq :: SExpr -> SExpr -> SExpr
-leq x y = smtFun "<=" [x,y]
+leq x y = fun "<=" [x,y]
 
 -- | Unsigned less-than on bit-vectors.
 bvULt :: SExpr -> SExpr -> SExpr
-bvULt x y = smtFun "bvult" [x,y]
+bvULt x y = fun "bvult" [x,y]
 
 
 
@@ -504,99 +515,99 @@ bvULt x y = smtFun "bvult" [x,y]
 -- | Addition.
 -- See also 'bvAdd'
 add :: SExpr -> SExpr -> SExpr
-add x y = smtFun "+" [x,y]
+add x y = fun "+" [x,y]
 
 -- | Subtraction.
 sub :: SExpr -> SExpr -> SExpr
-sub x y = smtFun "-" [x,y]
+sub x y = fun "-" [x,y]
 
 -- | Arithmetic negation for integers and reals.
 -- See also 'bvNeg'.
 neg :: SExpr -> SExpr
-neg x = smtFun "-" [x]
+neg x = fun "-" [x]
 
 -- | Multiplication.
 mul :: SExpr -> SExpr -> SExpr
-mul x y = smtFun "*" [x,y]
+mul x y = fun "*" [x,y]
 
 -- | Absolute value.
 abs :: SExpr -> SExpr
-abs x = smtFun "abs" [x]
+abs x = fun "abs" [x]
 
 -- | Integer division.
 div :: SExpr -> SExpr -> SExpr
-div x y = smtFun "div" [x,y]
+div x y = fun "div" [x,y]
 
 -- | Modulus.
 mod :: SExpr -> SExpr -> SExpr
-mod x y = smtFun "mod" [x,y]
+mod x y = fun "mod" [x,y]
 
 -- | Is the number divisible by the given constante.
 divisible :: SExpr -> Integer -> SExpr
-divisible x n = List [ smtFam "divisible" [n], x ]
+divisible x n = List [ fam "divisible" [n], x ]
 
 -- | Division of real numbers.
 realDiv :: SExpr -> SExpr -> SExpr
-realDiv x y = smtFun "/" [x,y]
+realDiv x y = fun "/" [x,y]
 
 -- | Bit vector concatenation.
 concat :: SExpr -> SExpr -> SExpr
-concat x y = smtFun "concat" [x,y]
+concat x y = fun "concat" [x,y]
 
 -- | Extract a sub-sequence of a bit vector.
 extract :: SExpr -> Integer -> Integer -> SExpr
-extract x y z = List [ smtFam "extract" [y,z], x ]
+extract x y z = List [ fam "extract" [y,z], x ]
 
 -- | Bitwise negation.
 bvNot :: SExpr -> SExpr
-bvNot x = smtFun "bvnot" [x]
+bvNot x = fun "bvnot" [x]
 
 -- | Bitwise conjuction.
 bvAnd :: SExpr -> SExpr -> SExpr
-bvAnd x y = smtFun "bvand" [x,y]
+bvAnd x y = fun "bvand" [x,y]
 
 -- | Bitwsie disjucntion.
 bvOr :: SExpr -> SExpr -> SExpr
-bvOr x y = smtFun "bvor" [x,y]
+bvOr x y = fun "bvor" [x,y]
 
 -- | Bit vector arithmetic negation.
 bvNeg :: SExpr -> SExpr
-bvNeg x = smtFun "bvneg" [x]
+bvNeg x = fun "bvneg" [x]
 
 -- | Addition of bit vectors.
 bvAdd :: SExpr -> SExpr -> SExpr
-bvAdd x y = smtFun "bvadd" [x,y]
+bvAdd x y = fun "bvadd" [x,y]
 
 -- | Multiplication of bit vectors.
 bvMul :: SExpr -> SExpr -> SExpr
-bvMul x y = smtFun "bvmul" [x,y]
+bvMul x y = fun "bvmul" [x,y]
 
 -- | Bit vector unsigned division.
 bvUDiv :: SExpr -> SExpr -> SExpr
-bvUDiv x y = smtFun "bvudiv" [x,y]
+bvUDiv x y = fun "bvudiv" [x,y]
 
 -- | Bit vector unsigned reminder.
 bvURem :: SExpr -> SExpr -> SExpr
-bvURem x y = smtFun "bvurem" [x,y]
+bvURem x y = fun "bvurem" [x,y]
 
 -- | Shift left.
 bvShl :: SExpr {- ^ value -} -> SExpr {- ^ shift amount -} -> SExpr
-bvShl x y = smtFun "bvshl" [x,y]
+bvShl x y = fun "bvshl" [x,y]
 
 -- | Logical shift right.
 bvLShr :: SExpr {- ^ value -} -> SExpr {- ^ shift amount -} -> SExpr
-bvLShr x y = smtFun "bvshr" [x,y]
+bvLShr x y = fun "bvshr" [x,y]
 
 -- | Get an elemeent of an array.
 select :: SExpr {- ^ array -} -> SExpr {- ^ index -} -> SExpr
-select x y = smtFun "select" [x,y]
+select x y = fun "select" [x,y]
 
 -- | Update an array
 store :: SExpr {- ^ array -}     ->
          SExpr {- ^ index -}     ->
          SExpr {- ^ new value -} ->
          SExpr
-store x y z = smtFun "store" [x,y,z]
+store x y z = fun "store" [x,y,z]
 
 
 
