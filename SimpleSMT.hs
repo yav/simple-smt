@@ -186,8 +186,8 @@ newSolver exe opts mbLog =
                     Nothing -> return ()
                     Just l  -> logMessage l a
 
-     _ <- forkIO $ forever $ do errs <- hGetLine hErr
-                                info ("[stderr] " ++ errs)
+     _ <- forkIO $ forever (do errs <- hGetLine hErr
+                               info ("[stderr] " ++ errs))
                     `X.catch` \X.SomeException {} -> return ()
 
      getResponse <-
