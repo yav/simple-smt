@@ -51,6 +51,7 @@ module SimpleSMT
   , bool
   , bvBin
   , bvHex
+  , value
 
     -- ** Connectives
   , not
@@ -450,6 +451,17 @@ bvHex w v = const ("#x" ++ padding ++ hex)
   padding = replicate (P.div (w + 3) 4 - length hex) '0'
 
 
+-- | Render a value as an expression.  Bit-vectors are rendered in hex,
+-- if their width is a multiple of 4, and in binary otherwise.
+value :: Value -> SExpr
+value val =
+  case val of
+    Bool b    -> bool b
+    Int n     -> int n
+    Real r    -> real r
+    Bits w v | P.mod w 4 == 0 -> bvHex w v
+             | otherwise      -> bvBin w v
+    Other o   -> o
 
 -- Connectives -----------------------------------------------------------------
 
