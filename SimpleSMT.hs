@@ -22,6 +22,7 @@ module SimpleSMT
 
     -- * Common SmtLib-2 Commands
   , setLogic
+  , setOption
   , push, pushMany
   , pop, popMany
   , declare
