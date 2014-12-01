@@ -266,7 +266,7 @@ pushMany proc n = simpleCommand proc [ "push", show n ]
 
 -- | Pop multiple scopes.
 popMany :: Solver -> Integer -> IO ()
-popMany proc n = simpleCommand proc [ "push", show n ]
+popMany proc n = simpleCommand proc [ "pop", show n ]
 
 
 
