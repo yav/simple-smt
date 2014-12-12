@@ -512,7 +512,7 @@ lt x y = fun "<" [x,y]
 
 -- | Greater-than-or-equal-to.
 geq :: SExpr -> SExpr -> SExpr
-geq x y = fun "<=" [x,y]
+geq x y = fun ">=" [x,y]
 
 -- | Less-than-or-equal-to.
 leq :: SExpr -> SExpr -> SExpr
