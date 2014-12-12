@@ -10,8 +10,9 @@ category:            Math
 build-type:          Simple
 cabal-version:       >=1.10
 
+extra-source-files:  CHANGES
+
 library
-  extra-source-files:  CHANGES
   exposed-modules:     SimpleSMT
   other-extensions:    Safe, RecordWildCards
   build-depends:       base >=4.7 && <10,
