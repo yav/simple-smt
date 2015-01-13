@@ -92,6 +92,7 @@ module SimpleSMT
   , bvNot
   , bvNeg
   , bvAnd
+  , bvXOr
   , bvOr
   , bvAdd
   , bvSub
