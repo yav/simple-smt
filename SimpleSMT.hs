@@ -71,6 +71,9 @@ module SimpleSMT
   , geq
   , leq
   , bvULt
+  , bvULeq
+  , bvSLt
+  , bvSLeq
 
     -- ** Arithmetic
   , add
@@ -91,11 +94,15 @@ module SimpleSMT
   , bvAnd
   , bvOr
   , bvAdd
+  , bvSub
   , bvMul
   , bvUDiv
   , bvURem
+  , bvSDiv
+  , bvSRem
   , bvShl
   , bvLShr
+  , bvAShr
 
     -- ** Arrays
   , select
@@ -446,7 +453,9 @@ bvBin w v = const ("#b" ++ bits)
 --      up so that it is.
 --    * The width should be strictly positive.
 bvHex :: Int {- ^ Width, in bits -} -> Integer {- ^ Value -} -> SExpr
-bvHex w v = const ("#x" ++ padding ++ hex)
+bvHex w v
+  | v >= 0    = const ("#x" ++ padding ++ hex)
+  | otherwise = bvHex w (2^w + v)
   where
   hex     = showHex v ""
   padding = replicate (P.div (w + 3) 4 - length hex) '0'
@@ -522,6 +531,18 @@ leq x y = fun "<=" [x,y]
 bvULt :: SExpr -> SExpr -> SExpr
 bvULt x y = fun "bvult" [x,y]
 
+-- | Unsigned less-than-or-equal on bit-vectors.
+bvULeq :: SExpr -> SExpr -> SExpr
+bvULeq x y = fun "bvule" [x,y]
+
+-- | Signed less-than on bit-vectors.
+bvSLt :: SExpr -> SExpr -> SExpr
+bvSLt x y = fun "bvslt" [x,y]
+
+-- | Signed less-than-or-equal on bit-vectors.
+bvSLeq :: SExpr -> SExpr -> SExpr
+bvSLeq x y = fun "bvsle" [x,y]
+
 
 
 
@@ -583,6 +604,10 @@ bvAnd x y = fun "bvand" [x,y]
 bvOr :: SExpr -> SExpr -> SExpr
 bvOr x y = fun "bvor" [x,y]
 
+-- | Bitwsie exclusive or.
+bvXOr :: SExpr -> SExpr -> SExpr
+bvXOr x y = fun "bvxor" [x,y]
+
 -- | Bit vector arithmetic negation.
 bvNeg :: SExpr -> SExpr
 bvNeg x = fun "bvneg" [x]
@@ -590,6 +615,12 @@ bvNeg x = fun "bvneg" [x]
 -- | Addition of bit vectors.
 bvAdd :: SExpr -> SExpr -> SExpr
 bvAdd x y = fun "bvadd" [x,y]
+
+-- | Subtraction of bit vectors.
+bvSub :: SExpr -> SExpr -> SExpr
+bvSub x y = fun "bvsub" [x,y]
+
+
 
 -- | Multiplication of bit vectors.
 bvMul :: SExpr -> SExpr -> SExpr
@@ -603,6 +634,17 @@ bvUDiv x y = fun "bvudiv" [x,y]
 bvURem :: SExpr -> SExpr -> SExpr
 bvURem x y = fun "bvurem" [x,y]
 
+-- | Bit vector signed division.
+bvSDiv :: SExpr -> SExpr -> SExpr
+bvSDiv x y = fun "bvsdiv" [x,y]
+
+-- | Bit vector signed reminder.
+bvSRem :: SExpr -> SExpr -> SExpr
+bvSRem x y = fun "bvsrem" [x,y]
+
+
+
+
 -- | Shift left.
 bvShl :: SExpr {- ^ value -} -> SExpr {- ^ shift amount -} -> SExpr
 bvShl x y = fun "bvshl" [x,y]
@@ -610,6 +652,10 @@ bvShl x y = fun "bvshl" [x,y]
 -- | Logical shift right.
 bvLShr :: SExpr {- ^ value -} -> SExpr {- ^ shift amount -} -> SExpr
 bvLShr x y = fun "bvshr" [x,y]
+
+-- | Arithemti shift right (copies most significant bit).
+bvAShr :: SExpr {- ^ value -} -> SExpr {- ^ shift amount -} -> SExpr
+bvAShr x y = fun "bvashr" [x,y]
 
 -- | Get an elemeent of an array.
 select :: SExpr {- ^ array -} -> SExpr {- ^ index -} -> SExpr
