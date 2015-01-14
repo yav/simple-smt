@@ -678,7 +678,7 @@ bvShl x y = fun "bvshl" [x,y]
 
 -- | Logical shift right.
 bvLShr :: SExpr {- ^ value -} -> SExpr {- ^ shift amount -} -> SExpr
-bvLShr x y = fun "bvshr" [x,y]
+bvLShr x y = fun "bvlshr" [x,y]
 
 -- | Arithemti shift right (copies most significant bit).
 bvAShr :: SExpr {- ^ value -} -> SExpr {- ^ shift amount -} -> SExpr
