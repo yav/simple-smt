@@ -1,5 +1,5 @@
 name:                simple-smt
-version:             0.5.0
+version:             0.5.1
 synopsis:            A simple way to interact with an SMT solver process.
 description:         A simple way to interact with an SMT solver process.
 license:             BSD3

@@ -1,1 +1,3 @@
-0.4: Fixes definiiton of `geq`
+0.5.1:  Add 'define' commands
+0.5:    Adds more bit-wise operations
+0.4:    Fixes definiiton of `geq`

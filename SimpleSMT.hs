@@ -27,6 +27,8 @@ module SimpleSMT
   , pop, popMany
   , declare
   , declareFun
+  , define
+  , defineFun
   , assert
   , check
   , Result(..)
@@ -289,6 +291,30 @@ declareFun :: Solver -> String -> [SExpr] -> SExpr -> IO SExpr
 declareFun proc f as r =
   do ackCommand proc $ fun "declare-fun" [ Atom f, List as, r ]
      return (const f)
+
+-- | Declare a constant.  A common abbreviation for 'declareFun'.
+-- For convenience, returns the defined name as a constant expression.
+define :: Solver ->
+          String {- ^ New symbol -} ->
+          SExpr  {- ^ Symbol type -} ->
+          SExpr  {- ^ Symbol definition -} ->
+          IO SExpr
+define proc f t e = defineFun proc f [] t e
+
+-- | Define a function or a constant.
+-- For convenience, returns an the defined name as a constant expression.
+defineFun :: Solver ->
+             String           {- ^ New symbol -} ->
+             [(String,SExpr)] {- ^ Parameters, with types -} ->
+             SExpr            {- ^ Type of result -} ->
+             SExpr            {- ^ Definition -} ->
+             IO SExpr
+defineFun proc f as t e =
+  do ackCommand proc $ fun "define-fun"
+                     $ [ Atom f, List [ List [const x,a] | (x,a) <- as ], t, e]
+     return (const f)
+
+
 
 -- | Assume a fact.
 assert :: Solver -> SExpr -> IO ()
