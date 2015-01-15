@@ -106,6 +106,8 @@ module SimpleSMT
   , bvShl
   , bvLShr
   , bvAShr
+  , signExtend
+  , zeroExtend
 
     -- ** Arrays
   , select
@@ -615,6 +617,15 @@ realDiv x y = fun "/" [x,y]
 concat :: SExpr -> SExpr -> SExpr
 concat x y = fun "concat" [x,y]
 
+-- | Extend to the signed equivalent bitvector by @i@ bits
+signExtend :: Integer -> SExpr -> SExpr
+signExtend i x = List [ fam "sign_extend" [i], x ]
+
+-- | Extend with zeros to the unsigned equivalent bitvector
+-- by @i@ bits
+zeroExtend :: Integer -> SExpr -> SExpr
+zeroExtend i x = List [ fam "zero_extend" [i], x ]
+
 -- | Extract a sub-sequence of a bit vector.
 extract :: SExpr -> Integer -> Integer -> SExpr
 extract x y z = List [ fam "extract" [y,z], x ]
@@ -683,6 +694,7 @@ bvLShr x y = fun "bvlshr" [x,y]
 -- | Arithemti shift right (copies most significant bit).
 bvAShr :: SExpr {- ^ value -} -> SExpr {- ^ shift amount -} -> SExpr
 bvAShr x y = fun "bvashr" [x,y]
+
 
 -- | Get an elemeent of an array.
 select :: SExpr {- ^ array -} -> SExpr {- ^ index -} -> SExpr
