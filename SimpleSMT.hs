@@ -731,8 +731,8 @@ newLogger =
                            t <- readIORef tab
                            putStr $ unlines [ replicate t ' ' ++ l | l <- ls ]
                            hFlush stdout
-         logTab   = modifyIORef' tab (+ 4)
-         logUntab = modifyIORef' tab (subtract 4)
+         logTab   = modifyIORef' tab (+ 2)
+         logUntab = modifyIORef' tab (subtract 2)
      return Logger { .. }
 
 
