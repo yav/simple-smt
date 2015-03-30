@@ -11,6 +11,7 @@ module SimpleSMT
   , stop
   , ackCommand
   , simpleCommand
+  , simpleCommandMaybe
 
     -- ** S-Expressions
   , SExpr(..)
@@ -21,8 +22,8 @@ module SimpleSMT
   , newLogger
 
     -- * Common SmtLib-2 Commands
-  , setLogic
-  , setOption
+  , setLogic, setLogicMaybe
+  , setOption, setOptionMaybe
   , push, pushMany
   , pop, popMany
   , declare
@@ -254,14 +255,37 @@ ackCommand proc c =
 simpleCommand :: Solver -> [String] -> IO ()
 simpleCommand proc = ackCommand proc . List . map Atom
 
+-- | Run a command and return True if successful, and False if unsupported.
+-- This is useful for setting options that unsupported by some solvers, but used
+-- by others.
+simpleCommandMaybe :: Solver -> [String] -> IO Bool
+simpleCommandMaybe proc c =
+  do res <- command proc (List (map Atom c))
+     case res of
+       Atom "success"     -> return True
+       Atom "unsupported" -> return False
+       _                  -> fail $ unlines
+                                      [ "Unexpected result from the SMT solver:"
+                                      , "  Expected: success or unsupported"
+                                      , "  Result: " ++ showsSExpr res ""
+                                      ]
+
 
 -- | Set a solver option.
 setOption :: Solver -> String -> String -> IO ()
 setOption s x y = simpleCommand s [ "set-option", x, y ]
 
+-- | Set a solver option, returning False if the option is unsupported.
+setOptionMaybe :: Solver -> String -> String -> IO Bool
+setOptionMaybe s x y = simpleCommandMaybe s [ "set-option", x, y ]
+
 -- | Set the solver's logic.  Usually, this should be done first.
 setLogic :: Solver -> String -> IO ()
 setLogic s x = simpleCommand s [ "set-logic", x ]
+
+-- | Set the solver's logic, returning False if the logic is unsupported.
+setLogicMaybe :: Solver -> String -> IO Bool
+setLogicMaybe s x = simpleCommandMaybe s [ "set-logic", x ]
 
 
 -- | Checkpoint state.  A special case of 'pushMany'.
