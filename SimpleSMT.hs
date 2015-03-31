@@ -20,6 +20,9 @@ module SimpleSMT
     -- ** Logging and Debugging
   , Logger(..)
   , newLogger
+  , withLogLevel
+  , logMessageAt
+  , logIndented
 
     -- * Common SmtLib-2 Commands
   , setLogic, setLogicMaybe
@@ -120,13 +123,14 @@ import qualified Prelude as P
 import Data.Char(isSpace)
 import Data.List(unfoldr)
 import Data.Bits(testBit)
-import Data.IORef(newIORef, atomicModifyIORef, modifyIORef', readIORef)
+import Data.IORef(newIORef, atomicModifyIORef, modifyIORef', readIORef,
+                  writeIORef)
 import System.Process(runInteractiveProcess, waitForProcess)
 import System.IO (hFlush, hGetLine, hGetContents, hPutStrLn, stdout)
 import System.Exit(ExitCode)
 import qualified Control.Exception as X
 import Control.Concurrent(forkIO)
-import Control.Monad(forever)
+import Control.Monad(forever,when)
 import Text.Read(readMaybe)
 import Data.Ratio((%), numerator, denominator)
 import Numeric(showHex, readHex)
@@ -740,6 +744,10 @@ data Logger = Logger
   { logMessage :: String -> IO ()
     -- ^ Log a message.
 
+  , logLevel   :: IO Int
+
+  , logSetLevel:: Int -> IO ()
+
   , logTab     :: IO ()
     -- ^ Increase indentation.
 
@@ -747,16 +755,41 @@ data Logger = Logger
     -- ^ Decrease indentation.
   }
 
--- | A simple stdout logger.
-newLogger :: IO Logger
-newLogger =
+-- | Run an IO action with the logger set to a specific level, restoring it when
+-- done.
+withLogLevel :: Logger -> Int -> IO a -> IO a
+withLogLevel Logger { .. } l m =
+  do l0 <- logLevel
+     X.bracket_ (logSetLevel l) (logSetLevel l0) m
+
+logIndented :: Logger -> IO a -> IO a
+logIndented Logger { .. } = X.bracket_ logTab logUntab
+
+-- | Log a message at a specific log level.
+logMessageAt :: Logger -> Int -> String -> IO ()
+logMessageAt logger l msg = withLogLevel logger l (logMessage logger msg)
+
+-- | A simple stdout logger.  Shows only messages logged at a level that is
+-- greater than or equal to the passed level.
+newLogger :: Int -> IO Logger
+newLogger l =
   do tab <- newIORef 0
-     let logMessage x = do let ls = lines x
-                           t <- readIORef tab
-                           putStr $ unlines [ replicate t ' ' ++ l | l <- ls ]
-                           hFlush stdout
-         logTab   = modifyIORef' tab (+ 2)
-         logUntab = modifyIORef' tab (subtract 2)
+     lev <- newIORef 0
+     let logLevel    = readIORef lev
+         logSetLevel = writeIORef lev
+
+         shouldLog m =
+           do cl <- logLevel
+              when (cl >= l) m
+
+         logMessage x = shouldLog $
+           do let ls = lines x
+              t <- readIORef tab
+              putStr $ unlines [ replicate t ' ' ++ l | l <- ls ]
+              hFlush stdout
+
+         logTab   = shouldLog (modifyIORef' tab (+ 2))
+         logUntab = shouldLog (modifyIORef' tab (subtract 2))
      return Logger { .. }
 
 
