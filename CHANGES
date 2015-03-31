@@ -1,3 +1,5 @@
+0.6.0: Allow finer-grained logging
+0.5.5: Add support for unsupported results
 0.5.3: Add 'zeroExtend' and 'signExtend'
 0.5.2: Fix right shift
 0.5.1:  Add 'define' commands
