@@ -167,6 +167,7 @@ showsSExpr ex =
 -- | Parse an s-expression.
 readSExpr :: String -> Maybe (SExpr, String)
 readSExpr (c : more) | isSpace c = readSExpr more
+readSExpr (';' : more) = readSExpr $ drop 1 $ dropWhile (/= '\n') more
 readSExpr ('(' : more) = do (xs,more1) <- list more
                             return (List xs, more1)
   where
