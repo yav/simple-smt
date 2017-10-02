@@ -126,7 +126,7 @@ import Data.Bits(testBit)
 import Data.IORef(newIORef, atomicModifyIORef, modifyIORef', readIORef,
                   writeIORef)
 import System.Process(runInteractiveProcess, waitForProcess)
-import System.IO (hFlush, hGetLine, hGetContents, hPutStrLn, stdout)
+import System.IO (hFlush, hGetLine, hGetContents, hPutStrLn, stdout, hClose)
 import System.Exit(ExitCode)
 import qualified Control.Exception as X
 import Control.Concurrent(forkIO)
@@ -233,7 +233,12 @@ newSolver exe opts mbLog =
 
          stop =
            do cmd (List [Atom "exit"])
-              waitForProcess h
+              ec <- waitForProcess h
+              X.catch (do hClose hIn
+                          hClose hOut
+                          hClose hErr)
+                      (\ex -> info (show (ex::X.IOException)))
+              return ec
 
          solver = Solver { .. }
 
