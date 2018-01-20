@@ -12,6 +12,7 @@ module SimpleSMT
   , ackCommand
   , simpleCommand
   , simpleCommandMaybe
+  , loadFile
 
     -- ** S-Expressions
   , SExpr(..)
@@ -29,6 +30,7 @@ module SimpleSMT
   , setOption, setOptionMaybe
   , push, pushMany
   , pop, popMany
+  , inNewScope
   , declare
   , declareFun
   , define
@@ -63,7 +65,9 @@ module SimpleSMT
     -- ** Connectives
   , not
   , and
+  , andMany
   , or
+  , orMany
   , xor
   , implies
 
@@ -72,6 +76,8 @@ module SimpleSMT
 
     -- ** Relational Predicates
   , eq
+  , distinct
+  , distinct
   , gt
   , lt
   , geq
@@ -83,6 +89,7 @@ module SimpleSMT
 
     -- ** Arithmetic
   , add
+  , addMany
   , sub
   , neg
   , mul
@@ -248,6 +255,30 @@ newSolver exe opts mbLog =
      return solver
 
 
+-- | Load the contents of a file.
+loadFile :: Solver -> FilePath -> IO ()
+loadFile s file = loadString s =<< readFile file
+
+-- | Load a raw SMT string.
+loadString :: Solver -> String -> IO ()
+loadString s str = go (dropComments str)
+  where
+  go txt
+    | all isSpace txt = return ()
+    | otherwise =
+      case readSExpr txt of
+        Just (e,rest) -> command s e >> go rest
+        Nothing       -> fail $ unlines [ "Failed to parse SMT file."
+                                        , txt
+                                        ]
+
+  dropComments = unlines . map dropComment . lines
+  dropComment xs = case break (== ';') xs of
+                     (as,_:_) -> as
+                     _ -> xs
+
+
+
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()
@@ -313,6 +344,12 @@ pushMany proc n = simpleCommand proc [ "push", show n ]
 -- | Pop multiple scopes.
 popMany :: Solver -> Integer -> IO ()
 popMany proc n = simpleCommand proc [ "pop", show n ]
+
+-- | Execute the IO action in a new solver scope (push before, pop after)
+inNewScope :: Solver -> IO a -> IO a
+inNewScope s m =
+  do push s
+     m `X.finally` pop s
 
 
 
@@ -546,9 +583,15 @@ not p = fun "not" [p]
 and :: SExpr -> SExpr -> SExpr
 and p q = fun "and" [p,q]
 
+andMany :: [SExpr] -> SExpr
+andMany xs = if null xs then bool True else fun "and" xs
+
 -- | Disjunction.
 or :: SExpr -> SExpr -> SExpr
 or p q = fun "or" [p,q]
+
+orMany :: [SExpr] -> SExpr
+orMany xs = if null xs then bool False else fun "or" xs
 
 -- | Exclusive-or.
 xor :: SExpr -> SExpr -> SExpr
@@ -573,6 +616,9 @@ ite x y z = fun "ite" [x,y,z]
 -- | Equality.
 eq :: SExpr -> SExpr -> SExpr
 eq x y = fun "=" [x,y]
+
+distinct :: [SExpr] -> SExpr
+distinct xs = if null xs then bool True else fun "distinct" xs
 
 -- | Greather-then
 gt :: SExpr -> SExpr -> SExpr
@@ -613,6 +659,9 @@ bvSLeq x y = fun "bvsle" [x,y]
 -- See also 'bvAdd'
 add :: SExpr -> SExpr -> SExpr
 add x y = fun "+" [x,y]
+
+addMany :: [SExpr] -> SExpr
+addMany xs = if null xs then int 0 else fun "+" xs
 
 -- | Subtraction.
 sub :: SExpr -> SExpr -> SExpr
