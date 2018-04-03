@@ -78,7 +78,6 @@ module SimpleSMT
     -- ** Relational Predicates
   , eq
   , distinct
-  , distinct
   , gt
   , lt
   , geq
