@@ -5,10 +5,8 @@
 module SimpleSMT
   (
     -- * Basic Solver Interface
-    Solver
+    Solver(..)
   , newSolver
-  , command
-  , stop
   , ackCommand
   , simpleCommand
   , simpleCommandMaybe
