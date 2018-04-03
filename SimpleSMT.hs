@@ -33,6 +33,7 @@ module SimpleSMT
   , inNewScope
   , declare
   , declareFun
+  , declareDatatype
   , define
   , defineFun
   , assert
@@ -364,6 +365,30 @@ declareFun :: Solver -> String -> [SExpr] -> SExpr -> IO SExpr
 declareFun proc f as r =
   do ackCommand proc $ fun "declare-fun" [ Atom f, List as, r ]
      return (const f)
+
+-- | Declare an ADT using the format introduced in SmtLib 2.6.
+declareDatatype ::
+  Solver ->
+  String {- ^ datatype name -} ->
+  [String] {- ^ sort parameters -} ->
+  [(String, [(String, SExpr)])] {- ^ constructors -} ->
+  IO ()
+declareDatatype proc t [] cs =
+  ackCommand proc $
+    fun "declare-datatype" $
+      [ Atom t
+      , List [ List (Atom c : [ List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs ]
+      ]
+declareDatatype proc t ps cs =
+  ackCommand proc $
+    fun "declare-datatype" $
+      [ Atom t
+      , fun "par" $
+          [ List (map Atom ps)
+          , List [ List (Atom c : [ List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs ]
+          ]
+      ]
+
 
 -- | Declare a constant.  A common abbreviation for 'declareFun'.
 -- For convenience, returns the defined name as a constant expression.
