@@ -43,7 +43,7 @@ module SimpleSMT
   , getConsts, getConst
   , Value(..)
 
-    -- * Convenienct Functoins for SmtLib-2 Epxressions
+    -- * Convenience Functions for SmtLib-2 Epxressions
   , fam
   , fun
   , const
@@ -203,7 +203,7 @@ data Solver = Solver
 
 -- | Start a new solver process.
 newSolver :: String       {- ^ Executable -}            ->
-             [String]     {- ^ Argumetns -}             ->
+             [String]     {- ^ Arguments -}             ->
              Maybe Logger {- ^ Optional logging here -} ->
              IO Solver
 newSolver exe opts mbLog =
@@ -333,7 +333,7 @@ setLogicMaybe s x = simpleCommandMaybe s [ "set-logic", x ]
 push :: Solver -> IO ()
 push proc = pushMany proc 1
 
--- | Restore to last check-point.  A sepcial case of 'popMany'.
+-- | Restore to last check-point.  A special case of 'popMany'.
 pop :: Solver -> IO ()
 pop proc = popMany proc 1
 
@@ -556,7 +556,7 @@ int :: Integer -> SExpr
 int x | x < 0     = neg (int (negate x))
          | otherwise = Atom (show x)
 
--- | Real (well, reational) literals.
+-- | Real (well, rational) literals.
 real :: Rational -> SExpr
 real x = realDiv (int (denominator x)) (int (numerator x))
 
@@ -603,7 +603,7 @@ value val =
 not :: SExpr -> SExpr
 not p = fun "not" [p]
 
--- | Conjucntion.
+-- | Conjunction.
 and :: SExpr -> SExpr -> SExpr
 and p q = fun "and" [p,q]
 
@@ -644,7 +644,7 @@ eq x y = fun "=" [x,y]
 distinct :: [SExpr] -> SExpr
 distinct xs = if null xs then bool True else fun "distinct" xs
 
--- | Greather-then
+-- | Greater-then
 gt :: SExpr -> SExpr -> SExpr
 gt x y = fun ">" [x,y]
 
@@ -712,7 +712,7 @@ div x y = fun "div" [x,y]
 mod :: SExpr -> SExpr -> SExpr
 mod x y = fun "mod" [x,y]
 
--- | Is the number divisible by the given constante.
+-- | Is the number divisible by the given constant.
 divisible :: SExpr -> Integer -> SExpr
 divisible x n = List [ fam "divisible" [n], x ]
 
@@ -745,11 +745,11 @@ bvNot x = fun "bvnot" [x]
 bvAnd :: SExpr -> SExpr -> SExpr
 bvAnd x y = fun "bvand" [x,y]
 
--- | Bitwsie disjucntion.
+-- | Bitwise disjunction.
 bvOr :: SExpr -> SExpr -> SExpr
 bvOr x y = fun "bvor" [x,y]
 
--- | Bitwsie exclusive or.
+-- | Bitwise exclusive or.
 bvXOr :: SExpr -> SExpr -> SExpr
 bvXOr x y = fun "bvxor" [x,y]
 
