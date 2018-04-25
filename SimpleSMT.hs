@@ -31,6 +31,7 @@ module SimpleSMT
   , inNewScope
   , declare
   , declareFun
+  , declareDatatype
   , define
   , defineFun
   , assert
@@ -40,7 +41,7 @@ module SimpleSMT
   , getConsts, getConst
   , Value(..)
 
-    -- * Convenienct Functoins for SmtLib-2 Epxressions
+    -- * Convenience Functions for SmtLib-2 Epxressions
   , fam
   , fun
   , const
@@ -74,7 +75,6 @@ module SimpleSMT
 
     -- ** Relational Predicates
   , eq
-  , distinct
   , distinct
   , gt
   , lt
@@ -201,7 +201,7 @@ data Solver = Solver
 
 -- | Start a new solver process.
 newSolver :: String       {- ^ Executable -}            ->
-             [String]     {- ^ Argumetns -}             ->
+             [String]     {- ^ Arguments -}             ->
              Maybe Logger {- ^ Optional logging here -} ->
              IO Solver
 newSolver exe opts mbLog =
@@ -331,7 +331,7 @@ setLogicMaybe s x = simpleCommandMaybe s [ "set-logic", x ]
 push :: Solver -> IO ()
 push proc = pushMany proc 1
 
--- | Restore to last check-point.  A sepcial case of 'popMany'.
+-- | Restore to last check-point.  A special case of 'popMany'.
 pop :: Solver -> IO ()
 pop proc = popMany proc 1
 
@@ -362,6 +362,30 @@ declareFun :: Solver -> String -> [SExpr] -> SExpr -> IO SExpr
 declareFun proc f as r =
   do ackCommand proc $ fun "declare-fun" [ Atom f, List as, r ]
      return (const f)
+
+-- | Declare an ADT using the format introduced in SmtLib 2.6.
+declareDatatype ::
+  Solver ->
+  String {- ^ datatype name -} ->
+  [String] {- ^ sort parameters -} ->
+  [(String, [(String, SExpr)])] {- ^ constructors -} ->
+  IO ()
+declareDatatype proc t [] cs =
+  ackCommand proc $
+    fun "declare-datatype" $
+      [ Atom t
+      , List [ List (Atom c : [ List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs ]
+      ]
+declareDatatype proc t ps cs =
+  ackCommand proc $
+    fun "declare-datatype" $
+      [ Atom t
+      , fun "par" $
+          [ List (map Atom ps)
+          , List [ List (Atom c : [ List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs ]
+          ]
+      ]
+
 
 -- | Declare a constant.  A common abbreviation for 'declareFun'.
 -- For convenience, returns the defined name as a constant expression.
@@ -530,7 +554,7 @@ int :: Integer -> SExpr
 int x | x < 0     = neg (int (negate x))
          | otherwise = Atom (show x)
 
--- | Real (well, reational) literals.
+-- | Real (well, rational) literals.
 real :: Rational -> SExpr
 real x = realDiv (int (denominator x)) (int (numerator x))
 
@@ -577,7 +601,7 @@ value val =
 not :: SExpr -> SExpr
 not p = fun "not" [p]
 
--- | Conjucntion.
+-- | Conjunction.
 and :: SExpr -> SExpr -> SExpr
 and p q = fun "and" [p,q]
 
@@ -618,7 +642,7 @@ eq x y = fun "=" [x,y]
 distinct :: [SExpr] -> SExpr
 distinct xs = if null xs then bool True else fun "distinct" xs
 
--- | Greather-then
+-- | Greater-then
 gt :: SExpr -> SExpr -> SExpr
 gt x y = fun ">" [x,y]
 
@@ -686,7 +710,7 @@ div x y = fun "div" [x,y]
 mod :: SExpr -> SExpr -> SExpr
 mod x y = fun "mod" [x,y]
 
--- | Is the number divisible by the given constante.
+-- | Is the number divisible by the given constant.
 divisible :: SExpr -> Integer -> SExpr
 divisible x n = List [ fam "divisible" [n], x ]
 
@@ -719,11 +743,11 @@ bvNot x = fun "bvnot" [x]
 bvAnd :: SExpr -> SExpr -> SExpr
 bvAnd x y = fun "bvand" [x,y]
 
--- | Bitwsie disjucntion.
+-- | Bitwise disjunction.
 bvOr :: SExpr -> SExpr -> SExpr
 bvOr x y = fun "bvor" [x,y]
 
--- | Bitwsie exclusive or.
+-- | Bitwise exclusive or.
 bvXOr :: SExpr -> SExpr -> SExpr
 bvXOr x y = fun "bvxor" [x,y]
 
