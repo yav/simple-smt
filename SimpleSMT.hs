@@ -26,6 +26,8 @@ module SimpleSMT
     -- * Common SmtLib-2 Commands
   , setLogic, setLogicMaybe
   , setOption, setOptionMaybe
+  , produceUnsatCores
+  , named
   , push, pushMany
   , pop, popMany
   , inNewScope
@@ -39,6 +41,7 @@ module SimpleSMT
   , Result(..)
   , getExprs, getExpr
   , getConsts, getConst
+  , getUnsatCore
   , Value(..)
 
     -- * Convenience Functions for SmtLib-2 Epxressions
@@ -322,10 +325,14 @@ setOptionMaybe s x y = simpleCommandMaybe s [ "set-option", x, y ]
 setLogic :: Solver -> String -> IO ()
 setLogic s x = simpleCommand s [ "set-logic", x ]
 
+
 -- | Set the solver's logic, returning False if the logic is unsupported.
 setLogicMaybe :: Solver -> String -> IO Bool
 setLogicMaybe s x = simpleCommandMaybe s [ "set-logic", x ]
 
+-- | Request unsat cores.  Returns if the solver supports them.
+produceUnsatCores :: Solver -> IO Bool
+produceUnsatCores s = setOptionMaybe s ":produce-unsat-cores" "true"
 
 -- | Checkpoint state.  A special case of 'pushMany'.
 push :: Solver -> IO ()
@@ -497,6 +504,24 @@ getExpr proc x =
 getConst :: Solver -> String -> IO Value
 getConst proc x = getExpr proc (Atom x)
 
+-- | Returns the names of the (named) formulas involved in a contradiction.
+getUnsatCore :: Solver -> IO [String]
+getUnsatCore s =
+  do res <- command s $ List [ Atom "get-unsat-core" ]
+     case res of
+       List xs -> mapM fromAtom xs
+       _       -> unexpected "a list of atoms" res
+  where
+  fromAtom x =
+    case x of
+      Atom a -> return a
+      _      -> unexpected "an atom" x
+
+  unexpected x e =
+    fail $ unlines [ "Unexpected response from the SMT Solver:"
+                   , "  Expected: " ++ x
+                   , "  Result: " ++ showsSExpr e ""
+                   ]
 
 --------------------------------------------------------------------------------
 
@@ -812,6 +837,12 @@ store :: SExpr {- ^ array -}     ->
          SExpr
 store x y z = fun "store" [x,y,z]
 
+
+--------------------------------------------------------------------------------
+-- Attributes
+
+named :: String -> SExpr -> SExpr
+named x e = fun "!" [e, Atom ":named", Atom x ]
 
 
 --------------------------------------------------------------------------------

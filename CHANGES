@@ -1,3 +1,4 @@
+0.9:   Support for working with unsat-cores
 0.8:   Support for declare; loading of strings/files; more sugar for SMT commands
 0.6.0: Allow finer-grained logging
 0.5.5: Add support for unsupported results
