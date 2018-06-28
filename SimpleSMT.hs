@@ -43,6 +43,7 @@ module SimpleSMT
   , getConsts, getConst
   , getUnsatCore
   , Value(..)
+  , sexprToVal
 
     -- * Convenience Functions for SmtLib-2 Epxressions
   , fam
