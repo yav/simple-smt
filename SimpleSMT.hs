@@ -14,7 +14,7 @@ module SimpleSMT
 
     -- ** S-Expressions
   , SExpr(..)
-  , showsSExpr, readSExpr
+  , showsSExpr, ppSExpr, readSExpr
 
     -- ** Logging and Debugging
   , Logger(..)
@@ -130,7 +130,7 @@ module SimpleSMT
 import Prelude hiding (not, and, or, abs, div, mod, concat, const)
 import qualified Prelude as P
 import Data.Char(isSpace)
-import Data.List(unfoldr)
+import Data.List(unfoldr,intersperse)
 import Data.Bits(testBit)
 import Data.IORef(newIORef, atomicModifyIORef, modifyIORef', readIORef,
                   writeIORef)
@@ -172,6 +172,38 @@ showsSExpr ex =
     List es -> showChar '(' .
                 foldr (\e m -> showsSExpr e . showChar ' ' . m)
                 (showChar ')') es
+
+
+-- | Show an S-expression in a somewhat readbale fashion.
+ppSExpr :: SExpr -> ShowS
+ppSExpr = go 0
+  where
+  tab n = showString (replicate n ' ')
+  many  = foldr (.) id
+
+  new n e = showChar '\n' . tab n . go n e
+
+  small n es =
+    case es of
+      [] -> Just []
+      e : more
+        | n <= 0 -> Nothing
+        | otherwise -> case e of
+                         Atom x -> (showString x :) <$> small (n-1) more
+                         _      -> Nothing
+
+  go :: Int -> SExpr -> ShowS
+  go n ex =
+    case ex of
+      Atom x        -> showString x
+      List es
+        | Just fs <- small 5 es ->
+          showChar '(' . many (intersperse (showChar ' ') fs) . showChar ')'
+
+      List (Atom x : es) -> showString "(" . showString x .
+                                many (map (new (n+3)) es) . showString ")"
+
+      List es -> showString "(" . many (map (new (n+2)) es) . showString ")"
 
 -- | Parse an s-expression.
 readSExpr :: String -> Maybe (SExpr, String)
