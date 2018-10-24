@@ -142,7 +142,7 @@ import Control.Concurrent(forkIO)
 import Control.Monad(forever,when)
 import Text.Read(readMaybe)
 import Data.Ratio((%), numerator, denominator)
-import Numeric(showHex, readHex)
+import Numeric(showHex, readHex, showFFloat)
 
 
 -- | Results of checking for satisfiability.
@@ -610,11 +610,14 @@ bool b = const (if b then "true" else "false")
 -- | Integer literals.
 int :: Integer -> SExpr
 int x | x < 0     = neg (int (negate x))
-         | otherwise = Atom (show x)
+      | otherwise = Atom (show x)
 
 -- | Real (well, rational) literals.
 real :: Rational -> SExpr
-real x = realDiv (int (denominator x)) (int (numerator x))
+real x
+  | toRational y == x = Atom (showFFloat Nothing y "")
+  | otherwise = realDiv (int (numerator x)) (int (denominator x))
+  where y = fromRational x :: Double
 
 -- | A bit vector represented in binary.
 --
