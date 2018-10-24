@@ -1,3 +1,4 @@
+0.9.3: Fix incorrect rendering or `real` literals
 0.9.2: add ppSExpr
 0.9:   Support for working with unsat-cores
 0.8:   Support for declare; loading of strings/files; more sugar for SMT commands
