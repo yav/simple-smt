@@ -100,6 +100,8 @@ module SimpleSMT
   , mod
   , divisible
   , realDiv
+  , toInt
+  , toReal
 
     -- ** Bit Vectors
   , concat
@@ -791,6 +793,14 @@ signExtend i x = List [ fam "sign_extend" [i], x ]
 -- by @i@ bits
 zeroExtend :: Integer -> SExpr -> SExpr
 zeroExtend i x = List [ fam "zero_extend" [i], x ]
+
+-- | Satisfies @toInt x <= x@ (i.e., this is like Haskell's 'floor')
+toInt :: SExpr -> SExpr
+toInt e = fun "to_int" [e]
+
+-- | Promote an integer to a real
+toReal :: SExpr -> SExpr
+toReal e = fun "to_real" [e]
 
 -- | Extract a sub-sequence of a bit vector.
 extract :: SExpr -> Integer -> Integer -> SExpr
