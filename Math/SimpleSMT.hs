@@ -2,7 +2,7 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE PatternGuards #-}
 -- | A module for interacting with an SMT solver, using SmtLib-2 format.
-module SimpleSMT
+module Math.SimpleSMT
   (
     -- * Basic Solver Interface
     Solver(..)
