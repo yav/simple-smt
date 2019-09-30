@@ -11,6 +11,7 @@ module SimpleSMT
   , simpleCommand
   , simpleCommandMaybe
   , loadFile
+  , loadString
 
     -- ** S-Expressions
   , SExpr(..)
