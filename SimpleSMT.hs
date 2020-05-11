@@ -133,7 +133,7 @@ module SimpleSMT
 
 import Prelude hiding (not, and, or, abs, div, mod, concat, const)
 import qualified Prelude as P
-import Data.Char(isSpace)
+import Data.Char(isSpace, isDigit)
 import Data.List(unfoldr,intersperse)
 import Data.Bits(testBit)
 import Data.IORef(newIORef, atomicModifyIORef, modifyIORef', readIORef,
@@ -168,11 +168,29 @@ data SExpr  = Atom String
             | List [SExpr]
               deriving (Eq, Ord, Show)
 
+
+-- | Symbols are either simple or quoted (c.f. SMTLIB v2.6 S3.1).
+-- This predicate indicates whether a character is allowed in a simple
+-- symbol.  Note that only ASCII letters are allowed.
+allowedSimpleChar :: Char -> Bool
+allowedSimpleChar c =
+  isDigit c || c `elem` (['a' .. 'z'] ++ ['A' .. 'Z'] ++ "~!@$%^&*_-+=<>.?/")
+
+isSimpleSymbol :: String -> Bool
+isSimpleSymbol s@(c : _) = P.not (isDigit c) && all allowedSimpleChar s
+isSimpleSymbol _          = False
+
+-- | Show a symbol, quoting as needed
+showSymbol :: String -> ShowS
+showSymbol s
+  | isSimpleSymbol s = showString s
+  | otherwise        = showString ('|' : s ++ "|")
+
 -- | Show an s-expression.
 showsSExpr :: SExpr -> ShowS
 showsSExpr ex =
   case ex of
-    Atom x  -> showString x
+    Atom x  -> showSymbol x
     List es -> showChar '(' .
                 foldr (\e m -> showsSExpr e . showChar ' ' . m)
                 (showChar ')') es
@@ -193,18 +211,18 @@ ppSExpr = go 0
       e : more
         | n <= 0 -> Nothing
         | otherwise -> case e of
-                         Atom x -> (showString x :) <$> small (n-1) more
+                         Atom x -> (showSymbol x :) <$> small (n-1) more
                          _      -> Nothing
 
   go :: Int -> SExpr -> ShowS
   go n ex =
     case ex of
-      Atom x        -> showString x
+      Atom x        -> showSymbol x
       List es
         | Just fs <- small 5 es ->
           showChar '(' . many (intersperse (showChar ' ') fs) . showChar ')'
 
-      List (Atom x : es) -> showString "(" . showString x .
+      List (Atom x : es) -> showString "(" . showSymbol x .
                                 many (map (new (n+3)) es) . showString ")"
 
       List es -> showString "(" . many (map (new (n+2)) es) . showString ")"
@@ -214,7 +232,7 @@ readSExpr :: String -> Maybe (SExpr, String)
 readSExpr (c : more) | isSpace c = readSExpr more
 readSExpr (';' : more) = readSExpr $ drop 1 $ dropWhile (/= '\n') more
 readSExpr ('|' : more) = do (sym, '|' : rest) <- pure (span ((/=) '|') more)
-                            Just (Atom ('|' : sym ++ ['|']), rest)                            
+                            Just (Atom sym, rest) -- Strip quotation marks so that equality works
 readSExpr ('(' : more) = do (xs,more1) <- list more
                             return (List xs, more1)
   where
