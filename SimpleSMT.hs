@@ -37,7 +37,8 @@ module SimpleSMT
   , declareDatatype
   , define
   , defineFun
-  , defineFunRec  
+  , defineFunRec
+  , defineFunsRec  
   , assert
   , check
   , Result(..)
@@ -477,6 +478,19 @@ defineFunRec proc f as t e =
                      $ [ Atom f, List [ List [const x,a] | (x,a) <- as ], t, e fs]
      return fs
 
+-- | Define a recursive function or a constant.  For convenience,
+-- returns an the defined name as a constant expression.  This body
+-- takes the function name as an argument.
+defineFunsRec :: Solver ->
+                 [(String, [(String,SExpr)], SExpr, SExpr)] ->
+                 IO ()
+defineFunsRec proc ds = ackCommand proc $ fun "define-funs-rec" [ decls, bodies ]
+  where
+    oneArg (f, args, t, _) = List [ Atom f, List [ List [const x,a] | (x,a) <- args ], t]
+    decls  = List (map oneArg ds)
+    bodies = List (map (\(_, _, _, body) -> body) ds)
+
+     
 -- | Assume a fact.
 assert :: Solver -> SExpr -> IO ()
 assert proc e = ackCommand proc $ fun "assert" [e]
