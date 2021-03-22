@@ -1,3 +1,4 @@
+0.9.6: Suport for quoated symbols and recursive functions
 0.9.5: Expose `loadString`
 0.9.4: Add `toInt` and `toReal`
 0.9.3: Fix incorrect rendering or `real` literals
