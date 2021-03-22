@@ -37,6 +37,8 @@ module SimpleSMT
   , declareDatatype
   , define
   , defineFun
+  , defineFunRec
+  , defineFunsRec  
   , assert
   , check
   , Result(..)
@@ -46,11 +48,18 @@ module SimpleSMT
   , Value(..)
   , sexprToVal
 
-    -- * Convenience Functions for SmtLib-2 Epxressions
+    -- * Convenience Functions for SmtLib-2 Expressions
   , fam
   , fun
   , const
+  , app
 
+    -- * Convenience Functions for SmtLib-2 identifiers
+  , quoteSymbol
+  , symbol
+  , keyword
+  , as 
+  
     -- ** Types
   , tInt
   , tBool
@@ -132,7 +141,7 @@ module SimpleSMT
 
 import Prelude hiding (not, and, or, abs, div, mod, concat, const)
 import qualified Prelude as P
-import Data.Char(isSpace)
+import Data.Char(isSpace, isDigit)
 import Data.List(unfoldr,intersperse)
 import Data.Bits(testBit)
 import Data.IORef(newIORef, atomicModifyIORef, modifyIORef', readIORef,
@@ -212,6 +221,8 @@ ppSExpr = go 0
 readSExpr :: String -> Maybe (SExpr, String)
 readSExpr (c : more) | isSpace c = readSExpr more
 readSExpr (';' : more) = readSExpr $ drop 1 $ dropWhile (/= '\n') more
+readSExpr ('|' : more) = do (sym, '|' : rest) <- pure (span ((/=) '|') more)
+                            Just (Atom ('|' : sym ++ ['|']), rest)                            
 readSExpr ('(' : more) = do (xs,more1) <- list more
                             return (List xs, more1)
   where
@@ -452,8 +463,34 @@ defineFun proc f as t e =
                      $ [ Atom f, List [ List [const x,a] | (x,a) <- as ], t, e]
      return (const f)
 
+-- | Define a recursive function or a constant.  For convenience,
+-- returns an the defined name as a constant expression.  This body
+-- takes the function name as an argument.
+defineFunRec :: Solver ->
+                String           {- ^ New symbol -} ->
+                [(String,SExpr)] {- ^ Parameters, with types -} ->
+                SExpr            {- ^ Type of result -} ->
+                (SExpr -> SExpr) {- ^ Definition -} ->
+                IO SExpr
+defineFunRec proc f as t e =
+  do let fs = const f
+     ackCommand proc $ fun "define-fun-rec"
+                     $ [ Atom f, List [ List [const x,a] | (x,a) <- as ], t, e fs]
+     return fs
 
+-- | Define a recursive function or a constant.  For convenience,
+-- returns an the defined name as a constant expression.  This body
+-- takes the function name as an argument.
+defineFunsRec :: Solver ->
+                 [(String, [(String,SExpr)], SExpr, SExpr)] ->
+                 IO ()
+defineFunsRec proc ds = ackCommand proc $ fun "define-funs-rec" [ decls, bodies ]
+  where
+    oneArg (f, args, t, _) = List [ Atom f, List [ List [const x,a] | (x,a) <- args ], t]
+    decls  = List (map oneArg ds)
+    bodies = List (map (\(_, _, _, body) -> body) ds)
 
+     
 -- | Assume a fact.
 assert :: Solver -> SExpr -> IO ()
 assert proc e = ackCommand proc $ fun "assert" [e]
@@ -575,6 +612,36 @@ fun f as = List (Atom f : as)
 const :: String -> SExpr
 const f = fun f []
 
+app :: SExpr -> [SExpr] -> SExpr
+app f xs = List (f : xs)
+
+-- Identifiers -----------------------------------------------------------------------
+
+-- | Symbols are either simple or quoted (c.f. SMTLIB v2.6 S3.1).
+-- This predicate indicates whether a character is allowed in a simple
+-- symbol.  Note that only ASCII letters are allowed.
+allowedSimpleChar :: Char -> Bool
+allowedSimpleChar c =
+  isDigit c || c `elem` (['a' .. 'z'] ++ ['A' .. 'Z'] ++ "~!@$%^&*_-+=<>.?/")
+
+isSimpleSymbol :: String -> Bool
+isSimpleSymbol s@(c : _) = P.not (isDigit c) && all allowedSimpleChar s
+isSimpleSymbol _         = False
+
+quoteSymbol :: String -> String
+quoteSymbol s 
+  | isSimpleSymbol s = s
+  | otherwise        = '|' : s ++ "|"
+
+symbol :: String -> SExpr
+symbol = Atom . quoteSymbol
+
+keyword :: String -> SExpr
+keyword s = Atom (':' : s)
+
+-- | Generate a type annotation for a symbol
+as :: SExpr -> SExpr -> SExpr
+as s t = fun "as" [s, t]
 
 -- Types -----------------------------------------------------------------------
 
