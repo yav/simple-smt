@@ -1,3 +1,4 @@
+0.9.7: `newSolverNotify` has a callback when solver quits
 0.9.6: Suport for quoated symbols and recursive functions
 0.9.5: Expose `loadString`
 0.9.4: Add `toInt` and `toReal`

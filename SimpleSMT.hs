@@ -7,6 +7,7 @@ module SimpleSMT
     -- * Basic Solver Interface
     Solver(..)
   , newSolver
+  , newSolverNotify
   , ackCommand
   , simpleCommand
   , simpleCommandMaybe
@@ -151,7 +152,7 @@ import System.IO (hFlush, hGetLine, hGetContents, hPutStrLn, stdout, hClose)
 import System.Exit(ExitCode)
 import qualified Control.Exception as X
 import Control.Concurrent(forkIO)
-import Control.Monad(forever,when)
+import Control.Monad(forever,when,void)
 import Text.Read(readMaybe)
 import Data.Ratio((%), numerator, denominator)
 import Numeric(showHex, readHex, showFFloat)
@@ -254,7 +255,15 @@ newSolver :: String       {- ^ Executable -}            ->
              [String]     {- ^ Arguments -}             ->
              Maybe Logger {- ^ Optional logging here -} ->
              IO Solver
-newSolver exe opts mbLog =
+newSolver n xs l = newSolverNotify n xs l Nothing
+
+newSolverNotify ::
+  String        {- ^ Executable -}            ->
+  [String]      {- ^ Arguments -}             ->
+  Maybe Logger  {- ^ Optional logging here -} ->
+  Maybe (ExitCode -> IO ()) {- ^ Do this when the solver exits -} ->
+  IO Solver
+newSolverNotify exe opts mbLog mbOnExit =
   do (hIn, hOut, hErr, h) <- runInteractiveProcess exe opts Nothing Nothing
 
      let info a = case mbLog of
@@ -264,6 +273,10 @@ newSolver exe opts mbLog =
      _ <- forkIO $ forever (do errs <- hGetLine hErr
                                info ("[stderr] " ++ errs))
                     `X.catch` \X.SomeException {} -> return ()
+
+     case mbOnExit of
+       Nothing -> pure ()
+       Just this -> void (forkIO (this =<< waitForProcess h))
 
      getResponse <-
        do txt <- hGetContents hOut                  -- Read *all* output
@@ -288,6 +301,7 @@ newSolver exe opts mbLog =
 
          stop =
            do cmd (List [Atom "exit"])
+                `X.catch` (\X.SomeException{} -> pure ())
               ec <- waitForProcess h
               X.catch (do hClose hIn
                           hClose hOut
