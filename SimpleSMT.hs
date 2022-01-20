@@ -178,16 +178,35 @@ data SExpr  = Atom String
               deriving (Eq, Ord, Show)
 
 -- | Show an s-expression.
+--
+-- >>> let Just (e, _) = readSExpr "(assert (= ((_ map (- (Int Int) Int)) a1Cl a1Cm) a1Cv))"
+-- >>> putStrLn $ showsSExpr e ""
+-- (assert (= ((_ map (- (Int Int) Int)) a1Cl a1Cm) a1Cv))
 showsSExpr :: SExpr -> ShowS
 showsSExpr ex =
   case ex of
     Atom x  -> showString x
-    List es -> showChar '(' .
-                foldr (\e m -> showsSExpr e . showChar ' ' . m)
-                (showChar ')') es
+    List [] -> showString "()"
+    List (e0 : es) -> showChar '(' . showsSExpr e0 .
+                       foldr (\e m -> showChar ' ' . showsSExpr e . m)
+                       (showChar ')') es
 
 
--- | Show an S-expression in a somewhat readbale fashion.
+-- | Show an s-expression in a somewhat readable fashion.
+--
+-- >>> let Just (e, _) = readSExpr "(assert (= ((_ map (- (Int Int) Int)) a1Cl a1Cm) a1Cv))"
+-- >>> putStrLn $ ppSExpr e ""
+-- (assert
+--    (=
+--       (
+--         (_
+--            map
+--            (-
+--               (Int Int)
+--               Int))
+--         a1Cl
+--         a1Cm)
+--       a1Cv))
 ppSExpr :: SExpr -> ShowS
 ppSExpr = go 0
   where
@@ -219,6 +238,9 @@ ppSExpr = go 0
       List es -> showString "(" . many (map (new (n+2)) es) . showString ")"
 
 -- | Parse an s-expression.
+--
+-- >>> readSExpr "(_ map (- (Int Int) Int)) a1Cl a1Cm)"
+-- Just (List [Atom "_",Atom "map",List [Atom "-",List [Atom "Int",Atom "Int"],Atom "Int"]]," a1Cl a1Cm)")
 readSExpr :: String -> Maybe (SExpr, String)
 readSExpr (c : more) | isSpace c = readSExpr more
 readSExpr (';' : more) = readSExpr $ drop 1 $ dropWhile (/= '\n') more
