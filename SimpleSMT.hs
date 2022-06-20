@@ -444,7 +444,7 @@ inNewScope s m =
 -- | Declare a constant.  A common abbreviation for 'declareFun'.
 -- For convenience, returns an the declared name as a constant expression.
 declare :: Solver -> String -> SExpr -> IO SExpr
-declare proc f t = declareFun proc f [] t
+declare proc f = declareFun proc f []
 
 -- | Declare a function or a constant.
 -- For convenience, returns an the declared name as a constant expression.
@@ -484,7 +484,7 @@ define :: Solver ->
           SExpr  {- ^ Symbol type -} ->
           SExpr  {- ^ Symbol definition -} ->
           IO SExpr
-define proc f t e = defineFun proc f [] t e
+define proc f = defineFun proc f []
 
 -- | Define a function or a constant.
 -- For convenience, returns an the defined name as a constant expression.
