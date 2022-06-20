@@ -244,7 +244,7 @@ ppSExpr = go 0
 readSExpr :: String -> Maybe (SExpr, String)
 readSExpr (c : more) | isSpace c = readSExpr more
 readSExpr (';' : more) = readSExpr $ drop 1 $ dropWhile (/= '\n') more
-readSExpr ('|' : more) = do (sym, '|' : rest) <- pure (span ((/=) '|') more)
+readSExpr ('|' : more) = do (sym, '|' : rest) <- pure (span ('|' /=) more)
                             Just (Atom ('|' : sym ++ ['|']), rest)                            
 readSExpr ('(' : more) = do (xs,more1) <- list more
                             return (List xs, more1)
@@ -444,7 +444,7 @@ inNewScope s m =
 -- | Declare a constant.  A common abbreviation for 'declareFun'.
 -- For convenience, returns an the declared name as a constant expression.
 declare :: Solver -> String -> SExpr -> IO SExpr
-declare proc f t = declareFun proc f [] t
+declare proc f = declareFun proc f []
 
 -- | Declare a function or a constant.
 -- For convenience, returns an the declared name as a constant expression.
@@ -462,15 +462,15 @@ declareDatatype ::
   IO ()
 declareDatatype proc t [] cs =
   ackCommand proc $
-    fun "declare-datatype" $
+    fun "declare-datatype"
       [ Atom t
       , List [ List (Atom c : [ List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs ]
       ]
 declareDatatype proc t ps cs =
   ackCommand proc $
-    fun "declare-datatype" $
+    fun "declare-datatype"
       [ Atom t
-      , fun "par" $
+      , fun "par"
           [ List (map Atom ps)
           , List [ List (Atom c : [ List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs ]
           ]
@@ -484,7 +484,7 @@ define :: Solver ->
           SExpr  {- ^ Symbol type -} ->
           SExpr  {- ^ Symbol definition -} ->
           IO SExpr
-define proc f t e = defineFun proc f [] t e
+define proc f = defineFun proc f []
 
 -- | Define a function or a constant.
 -- For convenience, returns an the defined name as a constant expression.
@@ -496,7 +496,7 @@ defineFun :: Solver ->
              IO SExpr
 defineFun proc f as t e =
   do ackCommand proc $ fun "define-fun"
-                     $ [ Atom f, List [ List [const x,a] | (x,a) <- as ], t, e]
+                       [ Atom f, List [ List [const x,a] | (x,a) <- as ], t, e]
      return (const f)
 
 -- | Define a recursive function or a constant.  For convenience,
@@ -511,7 +511,7 @@ defineFunRec :: Solver ->
 defineFunRec proc f as t e =
   do let fs = const f
      ackCommand proc $ fun "define-fun-rec"
-                     $ [ Atom f, List [ List [const x,a] | (x,a) <- as ], t, e fs]
+                       [ Atom f, List [ List [const x,a] | (x,a) <- as ], t, e fs]
      return fs
 
 -- | Define a recursive function or a constant.  For convenience,
