@@ -462,15 +462,15 @@ declareDatatype ::
   IO ()
 declareDatatype proc t [] cs =
   ackCommand proc $
-    fun "declare-datatype" $
+    fun "declare-datatype"
       [ Atom t
       , List [ List (Atom c : [ List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs ]
       ]
 declareDatatype proc t ps cs =
   ackCommand proc $
-    fun "declare-datatype" $
+    fun "declare-datatype"
       [ Atom t
-      , fun "par" $
+      , fun "par"
           [ List (map Atom ps)
           , List [ List (Atom c : [ List [Atom s, argTy] | (s, argTy) <- args]) | (c, args) <- cs ]
           ]
@@ -496,7 +496,7 @@ defineFun :: Solver ->
              IO SExpr
 defineFun proc f as t e =
   do ackCommand proc $ fun "define-fun"
-                     $ [ Atom f, List [ List [const x,a] | (x,a) <- as ], t, e]
+                       [ Atom f, List [ List [const x,a] | (x,a) <- as ], t, e]
      return (const f)
 
 -- | Define a recursive function or a constant.  For convenience,
@@ -511,7 +511,7 @@ defineFunRec :: Solver ->
 defineFunRec proc f as t e =
   do let fs = const f
      ackCommand proc $ fun "define-fun-rec"
-                     $ [ Atom f, List [ List [const x,a] | (x,a) <- as ], t, e fs]
+                       [ Atom f, List [ List [const x,a] | (x,a) <- as ], t, e fs]
      return fs
 
 -- | Define a recursive function or a constant.  For convenience,
