@@ -39,7 +39,7 @@ module SimpleSMT
   , define
   , defineFun
   , defineFunRec
-  , defineFunsRec  
+  , defineFunsRec
   , assert
   , check
   , Result(..)
@@ -59,8 +59,8 @@ module SimpleSMT
   , quoteSymbol
   , symbol
   , keyword
-  , as 
-  
+  , as
+
     -- ** Types
   , tInt
   , tBool
@@ -147,7 +147,7 @@ import Data.List(unfoldr,intersperse)
 import Data.Bits(testBit)
 import Data.IORef(newIORef, atomicModifyIORef, modifyIORef', readIORef,
                   writeIORef)
-import System.Process(runInteractiveProcess, waitForProcess)
+import System.Process(runInteractiveProcess, waitForProcess, terminateProcess)
 import System.IO (hFlush, hGetLine, hGetContents, hPutStrLn, stdout, hClose)
 import System.Exit(ExitCode)
 import qualified Control.Exception as X
@@ -245,7 +245,7 @@ readSExpr :: String -> Maybe (SExpr, String)
 readSExpr (c : more) | isSpace c = readSExpr more
 readSExpr (';' : more) = readSExpr $ drop 1 $ dropWhile (/= '\n') more
 readSExpr ('|' : more) = do (sym, '|' : rest) <- pure (span ((/=) '|') more)
-                            Just (Atom ('|' : sym ++ ['|']), rest)                            
+                            Just (Atom ('|' : sym ++ ['|']), rest)
 readSExpr ('(' : more) = do (xs,more1) <- list more
                             return (List xs, more1)
   where
@@ -268,7 +268,10 @@ data Solver = Solver
     -- ^ Send a command to the solver.
 
   , stop :: IO ExitCode
-    -- ^ Terminate the solver.
+    -- ^ Wait for the solver to finish and exit gracefully.
+
+  , forceStop :: IO ExitCode
+    -- ^ Terminate the solver without waiting for it to finish.
   }
 
 
@@ -321,15 +324,20 @@ newSolverNotify exe opts mbLog mbOnExit =
                                return res
                 Nothing  -> fail "Missing response from solver"
 
-         stop =
-           do cmd (List [Atom "exit"])
-                `X.catch` (\X.SomeException{} -> pure ())
-              ec <- waitForProcess h
+         waitAndCleanup =
+           do ec <- waitForProcess h
               X.catch (do hClose hIn
                           hClose hOut
                           hClose hErr)
                       (\ex -> info (show (ex::X.IOException)))
               return ec
+
+         forceStop = terminateProcess h *> waitAndCleanup
+
+         stop =
+           do cmd (List [Atom "exit"])
+                `X.catch` (\X.SomeException{} -> pure ())
+              waitAndCleanup
 
          solver = Solver { .. }
 
@@ -526,7 +534,7 @@ defineFunsRec proc ds = ackCommand proc $ fun "define-funs-rec" [ decls, bodies 
     decls  = List (map oneArg ds)
     bodies = List (map (\(_, _, _, body) -> body) ds)
 
-     
+
 -- | Assume a fact.
 assert :: Solver -> SExpr -> IO ()
 assert proc e = ackCommand proc $ fun "assert" [e]
@@ -665,7 +673,7 @@ isSimpleSymbol s@(c : _) = P.not (isDigit c) && all allowedSimpleChar s
 isSimpleSymbol _         = False
 
 quoteSymbol :: String -> String
-quoteSymbol s 
+quoteSymbol s
   | isSimpleSymbol s = s
   | otherwise        = '|' : s ++ "|"
 
@@ -1049,11 +1057,3 @@ newLogger l =
          logTab   = shouldLog (modifyIORef' tab (+ 2))
          logUntab = shouldLog (modifyIORef' tab (subtract 2))
      return Logger { .. }
-
-
-
-
-
-
-
-
