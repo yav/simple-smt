@@ -1,5 +1,3 @@
-{-# LANGUAGE Safe #-}
-{-# LANGUAGE PatternGuards #-}
 -- | A module for interacting with an SMT solver, using SmtLib-2 format.
 module SimpleSMT.Solver
     -- * Basic Solver Interface
@@ -39,13 +37,8 @@ module SimpleSMT.Solver
 
 import SimpleSMT.SExpr
 import Prelude hiding (not, and, or, abs, div, mod, concat, const)
-import qualified Prelude as P
 import qualified Control.Exception as X
-import Data.Char(isSpace, isDigit)
-import Data.Bits(testBit)
-import Text.Read(readMaybe)
-import Data.Ratio((%), numerator, denominator)
-import Numeric(showHex, readHex, showFFloat)
+import Data.Char(isSpace)
 import System.Exit(ExitCode)
 
 class Backend s where
@@ -88,7 +81,7 @@ loadString s str = go (dropComments str)
 
   dropComments = unlines . map dropComment . lines
   dropComment xs = case break (== ';') xs of
-                     (as,_:_) -> as
+                     (as',_:_) -> as'
                      _ -> xs
 
 
@@ -179,8 +172,8 @@ declare proc f t = declareFun proc f [] t
 -- | Declare a function or a constant.
 -- For convenience, returns an the declared name as a constant expression.
 declareFun :: Backend s => Solver s -> String -> [SExpr] -> SExpr -> IO SExpr
-declareFun proc f as r =
-  do ackCommand proc $ fun "declare-fun" [ Atom f, List as, r ]
+declareFun proc f as' r =
+  do ackCommand proc $ fun "declare-fun" [ Atom f, List as', r ]
      return (const f)
 
 -- | Declare an ADT using the format introduced in SmtLib 2.6.
@@ -224,9 +217,9 @@ defineFun :: Backend s => Solver s ->
              SExpr            {- ^ Type of result -} ->
              SExpr            {- ^ Definition -} ->
              IO SExpr
-defineFun proc f as t e =
+defineFun proc f as' t e =
   do ackCommand proc $ fun "define-fun"
-                     $ [ Atom f, List [ List [const x,a] | (x,a) <- as ], t, e]
+                     $ [ Atom f, List [ List [const x,a] | (x,a) <- as' ], t, e]
      return (const f)
 
 -- | Define a recursive function or a constant.  For convenience,
@@ -238,10 +231,10 @@ defineFunRec :: Backend s => Solver s ->
                 SExpr            {- ^ Type of result -} ->
                 (SExpr -> SExpr) {- ^ Definition -} ->
                 IO SExpr
-defineFunRec proc f as t e =
+defineFunRec proc f as' t e =
   do let fs = const f
      ackCommand proc $ fun "define-fun-rec"
-                     $ [ Atom f, List [ List [const x,a] | (x,a) <- as ], t, e fs]
+                     $ [ Atom f, List [ List [const x,a] | (x,a) <- as' ], t, e fs]
      return fs
 
 -- | Define a recursive function or a constant.  For convenience,

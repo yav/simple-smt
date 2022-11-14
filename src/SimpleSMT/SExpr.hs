@@ -1,5 +1,3 @@
-{-# LANGUAGE Safe #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE PatternGuards #-}
 -- | A module for interacting with an SMT solver, using SmtLib-2 format.
 module SimpleSMT.SExpr
@@ -98,13 +96,8 @@ module SimpleSMT.SExpr
 import Prelude hiding (not, and, or, abs, div, mod, concat, const)
 import qualified Prelude as P
 import Data.Char(isSpace, isDigit)
-import Data.List(unfoldr,intersperse)
 import Data.Bits(testBit)
-import Data.IORef(newIORef, atomicModifyIORef, modifyIORef', readIORef,
-                  writeIORef)
-import qualified Control.Exception as X
-import Control.Concurrent(forkIO)
-import Control.Monad(forever,when,void)
+import Data.List (intersperse)
 import Text.Read(readMaybe)
 import Data.Ratio((%), numerator, denominator)
 import Numeric(showHex, readHex, showFFloat)
@@ -167,6 +160,7 @@ ppSExpr = go 0
 
   new n e = showChar '\n' . tab n . go n e
 
+  small :: Int -> [SExpr] -> Maybe [ShowS]
   small n es =
     case es of
       [] -> Just []
@@ -207,7 +201,7 @@ readSExpr ('(' : more) = do (xs,more1) <- list more
                         (vs,txt2) <- list txt1
                         return (v:vs, txt2)
 readSExpr txt     = case break end txt of
-                       (as,bs) | P.not (null as) -> Just (Atom as, bs)
+                       (as',bs) | P.not (null as') -> Just (Atom as', bs)
                        _ -> Nothing
   where end x = x == ')' || isSpace x
 
@@ -245,7 +239,7 @@ fam f is = List (Atom "_" : Atom f : map (Atom . show) is)
 -- | An SMT function.
 fun :: String -> [SExpr] -> SExpr
 fun f [] = Atom f
-fun f as = List (Atom f : as)
+fun f as' = List (Atom f : as')
 
 -- | An SMT constant.  A special case of 'fun'.
 const :: String -> SExpr

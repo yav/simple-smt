@@ -20,8 +20,7 @@ import Control.Concurrent(forkIO)
 import qualified Control.Exception as X
 import Data.IORef(newIORef, atomicModifyIORef, modifyIORef', readIORef,
                   writeIORef)
-import Data.List(unfoldr,intersperse)
-import Data.String (fromString)
+import Data.List(unfoldr)
 import System.Exit(ExitCode)
 import System.Process(runInteractiveProcess, waitForProcess, terminateProcess)
 import System.IO (hFlush, hGetLine, hGetContents, hPutStrLn, stdout, hClose)
@@ -80,7 +79,6 @@ newSolverProcessNotify exe opts mbLog mbOnExit = do
         hFlush hIn
       command c = do
         cmd c
-        getResponse
         mb <- getResponse
         case mb of
           Just res -> do
@@ -152,7 +150,7 @@ newLogger l =
          logMessage x = shouldLog $
            do let ls = lines x
               t <- readIORef tab
-              putStr $ unlines [ replicate t ' ' ++ l | l <- ls ]
+              putStr $ unlines [ replicate t ' ' ++ l' | l' <- ls ]
               hFlush stdout
 
          logTab   = shouldLog (modifyIORef' tab (+ 2))
