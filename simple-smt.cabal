@@ -13,7 +13,10 @@ cabal-version:       >=1.10
 extra-source-files:  CHANGES
 
 library
+  hs-source-dirs:      src
   exposed-modules:     SimpleSMT
+                       SimpleSMT.SExpr
+                       SimpleSMT.Solver
   other-extensions:    Safe, RecordWildCards
   build-depends:       base >=4.8 && <10,
                        process
