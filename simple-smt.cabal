@@ -17,6 +17,7 @@ library
   exposed-modules:     SimpleSMT
                        SimpleSMT.SExpr
                        SimpleSMT.Solver
+                       SimpleSMT.Solver.Process
   other-extensions:    Safe, RecordWildCards
   build-depends:       base >=4.8 && <10,
                        process

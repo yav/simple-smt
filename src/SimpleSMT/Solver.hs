@@ -1,32 +1,25 @@
 {-# LANGUAGE Safe #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE PatternGuards #-}
 -- | A module for interacting with an SMT solver, using SmtLib-2 format.
 module SimpleSMT.Solver
-  (
     -- * Basic Solver Interface
-    Solver(..)
-  , newSolver
-  , newSolverNotify
+  ( Backend(..)
+  , Solver(..)
   , ackCommand
   , simpleCommand
   , simpleCommandMaybe
   , loadFile
   , loadString
-
-    -- ** Logging and Debugging
-  , Logger(..)
-  , newLogger
-  , withLogLevel
-  , logMessageAt
-  , logIndented
-
     -- * Common SmtLib-2 Commands
-  , setLogic, setLogicMaybe
-  , setOption, setOptionMaybe
+  , setLogic
+  , setLogicMaybe
+  , setOption
+  , setOptionMaybe
   , produceUnsatCores
-  , push, pushMany
-  , pop, popMany
+  , push
+  , pushMany
+  , pop
+  , popMany
   , inNewScope
   , declare
   , declareFun
@@ -37,120 +30,51 @@ module SimpleSMT.Solver
   , defineFunsRec
   , assert
   , check
-  , getExprs, getExpr
-  , getConsts, getConst
+  , getExprs
+  , getExpr
+  , getConsts
+  , getConst
   , getUnsatCore
   ) where
 
 import SimpleSMT.SExpr
 import Prelude hiding (not, and, or, abs, div, mod, concat, const)
 import qualified Prelude as P
-import Data.Char(isSpace, isDigit)
-import Data.List(unfoldr,intersperse)
-import Data.Bits(testBit)
-import Data.IORef(newIORef, atomicModifyIORef, modifyIORef', readIORef,
-                  writeIORef)
-import System.Process(runInteractiveProcess, waitForProcess, terminateProcess)
-import System.IO (hFlush, hGetLine, hGetContents, hPutStrLn, stdout, hClose)
-import System.Exit(ExitCode)
 import qualified Control.Exception as X
-import Control.Concurrent(forkIO)
-import Control.Monad(forever,when,void)
+import Data.Char(isSpace, isDigit)
+import Data.Bits(testBit)
 import Text.Read(readMaybe)
 import Data.Ratio((%), numerator, denominator)
 import Numeric(showHex, readHex, showFFloat)
+import System.Exit(ExitCode)
 
--- | An interactive solver process.
-data Solver = Solver
-  { command   :: SExpr -> IO SExpr
+class Backend s where
+  send :: s -> String -> IO SExpr
     -- ^ Send a command to the solver.
-
-  , stop :: IO ExitCode
-    -- ^ Wait for the solver to finish and exit gracefully.
-
-  , forceStop :: IO ExitCode
+  stop :: s -> IO ExitCode
     -- ^ Terminate the solver without waiting for it to finish.
-  }
 
+data Backend s =>
+     Solver s =
+  Solver
+    { backend :: s
+    }  
 
--- | Start a new solver process.
-newSolver :: String       {- ^ Executable -}            ->
-             [String]     {- ^ Arguments -}             ->
-             Maybe Logger {- ^ Optional logging here -} ->
-             IO Solver
-newSolver n xs l = newSolverNotify n xs l Nothing
+instance Backend s => Backend (Solver s) where
+  send solver = send (backend solver)
+  stop solver = stop (backend solver)
 
-newSolverNotify ::
-  String        {- ^ Executable -}            ->
-  [String]      {- ^ Arguments -}             ->
-  Maybe Logger  {- ^ Optional logging here -} ->
-  Maybe (ExitCode -> IO ()) {- ^ Do this when the solver exits -} ->
-  IO Solver
-newSolverNotify exe opts mbLog mbOnExit =
-  do (hIn, hOut, hErr, h) <- runInteractiveProcess exe opts Nothing Nothing
-
-     let info a = case mbLog of
-                    Nothing -> return ()
-                    Just l  -> logMessage l a
-
-     _ <- forkIO $ forever (do errs <- hGetLine hErr
-                               info ("[stderr] " ++ errs))
-                    `X.catch` \X.SomeException {} -> return ()
-
-     case mbOnExit of
-       Nothing -> pure ()
-       Just this -> void (forkIO (this =<< waitForProcess h))
-
-     getResponse <-
-       do txt <- hGetContents hOut                  -- Read *all* output
-          ref <- newIORef (unfoldr readSExpr txt)  -- Parse, and store result
-          return $ atomicModifyIORef ref $ \xs ->
-                      case xs of
-                        []     -> (xs, Nothing)
-                        y : ys -> (ys, Just y)
-
-     let cmd c = do let txt = showsSExpr c ""
-                    info ("[send->] " ++ txt)
-                    hPutStrLn hIn txt
-                    hFlush hIn
-
-         command c =
-           do cmd c
-              mb <- getResponse
-              case mb of
-                Just res -> do info ("[<-recv] " ++ showsSExpr res "")
-                               return res
-                Nothing  -> fail "Missing response from solver"
-
-         waitAndCleanup =
-           do ec <- waitForProcess h
-              X.catch (do hClose hIn
-                          hClose hOut
-                          hClose hErr)
-                      (\ex -> info (show (ex::X.IOException)))
-              return ec
-
-         forceStop = terminateProcess h *> waitAndCleanup
-
-         stop =
-           do cmd (List [Atom "exit"])
-                `X.catch` (\X.SomeException{} -> pure ())
-              waitAndCleanup
-
-         solver = Solver { .. }
-
-     setOption solver ":print-success" "true"
-     setOption solver ":produce-models" "true"
-
-     return solver
-
-
+command :: Backend s => Solver s -> SExpr -> IO SExpr
+command solver expr = do
+  let cmd = showsSExpr expr ""
+  send solver cmd
+  
 -- | Load the contents of a file.
-loadFile :: Solver -> FilePath -> IO ()
+loadFile :: Backend s => Solver s -> FilePath -> IO ()
 loadFile s file = loadString s =<< readFile file
 
 -- | Load a raw SMT string.
-loadString :: Solver -> String -> IO ()
+loadString :: Backend s => Solver s -> String -> IO ()
 loadString s str = go (dropComments str)
   where
   go txt
@@ -171,7 +95,7 @@ loadString s str = go (dropComments str)
 
 
 -- | A command with no interesting result.
-ackCommand :: Solver -> SExpr -> IO ()
+ackCommand :: Backend s => Solver s -> SExpr -> IO ()
 ackCommand proc c =
   do res <- command proc c
      case res of
@@ -183,13 +107,13 @@ ackCommand proc c =
                       ]
 
 -- | A command entirely made out of atoms, with no interesting result.
-simpleCommand :: Solver -> [String] -> IO ()
+simpleCommand :: Backend s => Solver s -> [String] -> IO ()
 simpleCommand proc = ackCommand proc . List . map Atom
 
 -- | Run a command and return True if successful, and False if unsupported.
 -- This is useful for setting options that unsupported by some solvers, but used
 -- by others.
-simpleCommandMaybe :: Solver -> [String] -> IO Bool
+simpleCommandMaybe :: Backend s => Solver s -> [String] -> IO Bool
 simpleCommandMaybe proc c =
   do res <- command proc (List (map Atom c))
      case res of
@@ -203,44 +127,44 @@ simpleCommandMaybe proc c =
 
 
 -- | Set a solver option.
-setOption :: Solver -> String -> String -> IO ()
+setOption :: Backend s => Solver s -> String -> String -> IO ()
 setOption s x y = simpleCommand s [ "set-option", x, y ]
 
 -- | Set a solver option, returning False if the option is unsupported.
-setOptionMaybe :: Solver -> String -> String -> IO Bool
+setOptionMaybe :: Backend s => Solver s -> String -> String -> IO Bool
 setOptionMaybe s x y = simpleCommandMaybe s [ "set-option", x, y ]
 
 -- | Set the solver's logic.  Usually, this should be done first.
-setLogic :: Solver -> String -> IO ()
+setLogic :: Backend s => Solver s -> String -> IO ()
 setLogic s x = simpleCommand s [ "set-logic", x ]
 
 
 -- | Set the solver's logic, returning False if the logic is unsupported.
-setLogicMaybe :: Solver -> String -> IO Bool
+setLogicMaybe :: Backend s => Solver s -> String -> IO Bool
 setLogicMaybe s x = simpleCommandMaybe s [ "set-logic", x ]
 
 -- | Request unsat cores.  Returns if the solver supports them.
-produceUnsatCores :: Solver -> IO Bool
+produceUnsatCores :: Backend s => Solver s -> IO Bool
 produceUnsatCores s = setOptionMaybe s ":produce-unsat-cores" "true"
 
 -- | Checkpoint state.  A special case of 'pushMany'.
-push :: Solver -> IO ()
+push :: Backend s => Solver s -> IO ()
 push proc = pushMany proc 1
 
 -- | Restore to last check-point.  A special case of 'popMany'.
-pop :: Solver -> IO ()
+pop :: Backend s => Solver s -> IO ()
 pop proc = popMany proc 1
 
 -- | Push multiple scopes.
-pushMany :: Solver -> Integer -> IO ()
+pushMany :: Backend s => Solver s -> Integer -> IO ()
 pushMany proc n = simpleCommand proc [ "push", show n ]
 
 -- | Pop multiple scopes.
-popMany :: Solver -> Integer -> IO ()
+popMany :: Backend s => Solver s -> Integer -> IO ()
 popMany proc n = simpleCommand proc [ "pop", show n ]
 
 -- | Execute the IO action in a new solver scope (push before, pop after)
-inNewScope :: Solver -> IO a -> IO a
+inNewScope :: Backend s => Solver s -> IO a -> IO a
 inNewScope s m =
   do push s
      m `X.finally` pop s
@@ -249,19 +173,19 @@ inNewScope s m =
 
 -- | Declare a constant.  A common abbreviation for 'declareFun'.
 -- For convenience, returns an the declared name as a constant expression.
-declare :: Solver -> String -> SExpr -> IO SExpr
+declare :: Backend s => Solver s -> String -> SExpr -> IO SExpr
 declare proc f t = declareFun proc f [] t
 
 -- | Declare a function or a constant.
 -- For convenience, returns an the declared name as a constant expression.
-declareFun :: Solver -> String -> [SExpr] -> SExpr -> IO SExpr
+declareFun :: Backend s => Solver s -> String -> [SExpr] -> SExpr -> IO SExpr
 declareFun proc f as r =
   do ackCommand proc $ fun "declare-fun" [ Atom f, List as, r ]
      return (const f)
 
 -- | Declare an ADT using the format introduced in SmtLib 2.6.
 declareDatatype ::
-  Solver ->
+  Backend s => Solver s ->
   String {- ^ datatype name -} ->
   [String] {- ^ sort parameters -} ->
   [(String, [(String, SExpr)])] {- ^ constructors -} ->
@@ -285,7 +209,7 @@ declareDatatype proc t ps cs =
 
 -- | Declare a constant.  A common abbreviation for 'declareFun'.
 -- For convenience, returns the defined name as a constant expression.
-define :: Solver ->
+define :: Backend s => Solver s ->
           String {- ^ New symbol -} ->
           SExpr  {- ^ Symbol type -} ->
           SExpr  {- ^ Symbol definition -} ->
@@ -294,7 +218,7 @@ define proc f t e = defineFun proc f [] t e
 
 -- | Define a function or a constant.
 -- For convenience, returns an the defined name as a constant expression.
-defineFun :: Solver ->
+defineFun :: Backend s => Solver s ->
              String           {- ^ New symbol -} ->
              [(String,SExpr)] {- ^ Parameters, with types -} ->
              SExpr            {- ^ Type of result -} ->
@@ -308,7 +232,7 @@ defineFun proc f as t e =
 -- | Define a recursive function or a constant.  For convenience,
 -- returns an the defined name as a constant expression.  This body
 -- takes the function name as an argument.
-defineFunRec :: Solver ->
+defineFunRec :: Backend s => Solver s ->
                 String           {- ^ New symbol -} ->
                 [(String,SExpr)] {- ^ Parameters, with types -} ->
                 SExpr            {- ^ Type of result -} ->
@@ -323,7 +247,7 @@ defineFunRec proc f as t e =
 -- | Define a recursive function or a constant.  For convenience,
 -- returns an the defined name as a constant expression.  This body
 -- takes the function name as an argument.
-defineFunsRec :: Solver ->
+defineFunsRec :: Backend s => Solver s ->
                  [(String, [(String,SExpr)], SExpr, SExpr)] ->
                  IO ()
 defineFunsRec proc ds = ackCommand proc $ fun "define-funs-rec" [ decls, bodies ]
@@ -334,11 +258,11 @@ defineFunsRec proc ds = ackCommand proc $ fun "define-funs-rec" [ decls, bodies 
 
 
 -- | Assume a fact.
-assert :: Solver -> SExpr -> IO ()
+assert :: Backend s => Solver s -> SExpr -> IO ()
 assert proc e = ackCommand proc $ fun "assert" [e]
 
 -- | Check if the current set of assertion is consistent.
-check :: Solver -> IO Result
+check :: Backend s => Solver s -> IO Result
 check proc = do
   res <- command proc (List [Atom "check-sat"])
   case res of
@@ -355,7 +279,7 @@ check proc = do
 
 -- | Get the values of some s-expressions.
 -- Only valid after a 'Sat' result.
-getExprs :: Solver -> [SExpr] -> IO [(SExpr, Value)]
+getExprs :: Backend s => Solver s -> [SExpr] -> IO [(SExpr, Value)]
 getExprs proc vals =
   do res <- command proc $ List [ Atom "get-value", List vals ]
      case res of
@@ -378,24 +302,24 @@ getExprs proc vals =
 -- | Get the values of some constants in the current model.
 -- A special case of 'getExprs'.
 -- Only valid after a 'Sat' result.
-getConsts :: Solver -> [String] -> IO [(String, Value)]
+getConsts :: Backend s => Solver s -> [String] -> IO [(String, Value)]
 getConsts proc xs =
   do ans <- getExprs proc (map Atom xs)
      return [ (x,e) | (Atom x, e) <- ans ]
 
 
 -- | Get the value of a single expression.
-getExpr :: Solver -> SExpr -> IO Value
+getExpr :: Backend s => Solver s -> SExpr -> IO Value
 getExpr proc x =
   do [ (_,v) ] <- getExprs proc [x]
      return v
 
 -- | Get the value of a single constant.
-getConst :: Solver -> String -> IO Value
+getConst :: Backend s => Solver s -> String -> IO Value
 getConst proc x = getExpr proc (Atom x)
 
 -- | Returns the names of the (named) formulas involved in a contradiction.
-getUnsatCore :: Solver -> IO [String]
+getUnsatCore :: Backend s => Solver s -> IO [String]
 getUnsatCore s =
   do res <- command s $ List [ Atom "get-unsat-core" ]
      case res of
@@ -412,57 +336,3 @@ getUnsatCore s =
                    , "  Expected: " ++ x
                    , "  Result: " ++ showsSExpr e ""
                    ]
---------------------------------------------------------------------------------
-
--- | Log messages with minimal formatting. Mostly for debugging.
-data Logger = Logger
-  { logMessage :: String -> IO ()
-    -- ^ Log a message.
-
-  , logLevel   :: IO Int
-
-  , logSetLevel:: Int -> IO ()
-
-  , logTab     :: IO ()
-    -- ^ Increase indentation.
-
-  , logUntab   :: IO ()
-    -- ^ Decrease indentation.
-  }
-
--- | Run an IO action with the logger set to a specific level, restoring it when
--- done.
-withLogLevel :: Logger -> Int -> IO a -> IO a
-withLogLevel Logger { .. } l m =
-  do l0 <- logLevel
-     X.bracket_ (logSetLevel l) (logSetLevel l0) m
-
-logIndented :: Logger -> IO a -> IO a
-logIndented Logger { .. } = X.bracket_ logTab logUntab
-
--- | Log a message at a specific log level.
-logMessageAt :: Logger -> Int -> String -> IO ()
-logMessageAt logger l msg = withLogLevel logger l (logMessage logger msg)
-
--- | A simple stdout logger.  Shows only messages logged at a level that is
--- greater than or equal to the passed level.
-newLogger :: Int -> IO Logger
-newLogger l =
-  do tab <- newIORef 0
-     lev <- newIORef 0
-     let logLevel    = readIORef lev
-         logSetLevel = writeIORef lev
-
-         shouldLog m =
-           do cl <- logLevel
-              when (cl >= l) m
-
-         logMessage x = shouldLog $
-           do let ls = lines x
-              t <- readIORef tab
-              putStr $ unlines [ replicate t ' ' ++ l | l <- ls ]
-              hFlush stdout
-
-         logTab   = shouldLog (modifyIORef' tab (+ 2))
-         logUntab = shouldLog (modifyIORef' tab (subtract 2))
-     return Logger { .. }
