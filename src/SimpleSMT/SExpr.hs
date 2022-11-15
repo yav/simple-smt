@@ -104,7 +104,6 @@ import Data.Char(isSpace, isDigit)
 import Data.Bits(testBit)
 import           Data.ByteString.Builder    (Builder, stringUtf8,
                                              toLazyByteString)
-import qualified Data.ByteString.Char8      as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.List (intersperse)
 import Text.Read(readMaybe)
@@ -146,8 +145,8 @@ showsSExpr ex =
                        (showChar ')') es
 
 -- | Convert an s-expression to a (strict) null terminated bytestring.
-serializeSExpr :: SExpr -> BS.ByteString
-serializeSExpr = LBS.toStrict . toLazyByteString . (<> "\NUL") . renderSExpr
+serializeSExpr :: SExpr -> LBS.ByteString
+serializeSExpr = toLazyByteString . (<> "\NUL") . renderSExpr
   where renderSExpr :: SExpr -> Builder
         renderSExpr (Atom x) = stringUtf8 x
         renderSExpr (List es) =
@@ -251,22 +250,22 @@ sexprToVal expr =
 
   
 infixr 5 :<
-pattern (:<) :: Char -> BS.ByteString -> BS.ByteString
-pattern c :< rest <- (BS.uncons -> Just (c, rest))
+pattern (:<) :: Char -> LBS.ByteString -> LBS.ByteString
+pattern c :< rest <- (LBS.uncons -> Just (c, rest))
 
 -- | Parse an s-expression.
 -- Like readSExpr but for ByteStrings.
-parseSExpr :: BS.ByteString -> Maybe (SExpr, BS.ByteString)
+parseSExpr :: LBS.ByteString -> Maybe (SExpr, LBS.ByteString)
 parseSExpr (c :< more) | isSpace c = parseSExpr more
-parseSExpr (';' :< more) = parseSExpr $ BS.drop 1 $ BS.dropWhile (/= '\n') more
+parseSExpr (';' :< more) = parseSExpr $ LBS.drop 1 $ LBS.dropWhile (/= '\n') more
 parseSExpr ('|' :< more) = do
-  let (sym, '|' :< rest) = BS.break (== '|') more
-  Just (Atom $ BS.unpack $ BS.cons '|' $ BS.snoc sym '|', rest)
+  let (sym, '|' :< rest) = LBS.break (== '|') more
+  Just (Atom $ LBS.unpack $ LBS.cons '|' $ LBS.snoc sym '|', rest)
 parseSExpr ('(' :< more) = do
   (es, rest) <- list more
   return (List es, rest)
   where
-    list :: BS.ByteString -> Maybe ([SExpr], BS.ByteString)
+    list :: LBS.ByteString -> Maybe ([SExpr], LBS.ByteString)
     list (c :< more') | isSpace c = list more'
     list (')' :< more') = return ([], more')
     list more' = do
@@ -274,9 +273,10 @@ parseSExpr ('(' :< more) = do
       (es, rest') <- list rest
       return (e : es, rest')
 parseSExpr txt =
-  case BS.break end txt of
-    (atom, rest) | P.not (BS.null atom) -> Just (Atom $ BS.unpack atom, rest)
-    _                                   -> Nothing
+  case LBS.break end txt of
+    (atom, rest)
+      | P.not (LBS.null atom) -> Just (Atom $ LBS.unpack atom, rest)
+    _ -> Nothing
   where
     end x = x == ')' || isSpace x
 

@@ -38,12 +38,12 @@ module SimpleSMT.Solver
 import SimpleSMT.SExpr
 import Prelude hiding (not, and, or, abs, div, mod, concat, const)
 import qualified Control.Exception as X
-import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Char(isSpace)
 import System.Exit(ExitCode)
 
 class Backend s where
-  send :: s -> BS.ByteString -> IO SExpr
+  send :: s -> LBS.ByteString -> IO SExpr
     -- ^ Send a command to the solver.
   stop :: s -> IO ExitCode
     -- ^ Wait for the solver to finish and exit gracefully.

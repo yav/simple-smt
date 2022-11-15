@@ -20,6 +20,7 @@ import Control.Monad(forever,when,void)
 import Control.Concurrent(forkIO)
 import qualified Control.Exception as X
 import qualified Data.ByteString.Char8 as BS
+import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.IORef(newIORef, atomicModifyIORef, modifyIORef', readIORef,
                   writeIORef)
 import Data.List(unfoldr)
@@ -28,7 +29,7 @@ import System.Process(runInteractiveProcess, waitForProcess, terminateProcess)
 import System.IO (hFlush, stdout, hClose)
 
 data SolverProcess = SolverProcess
-  { command   :: BS.ByteString -> IO SExpr 
+  { command   :: LBS.ByteString -> IO SExpr 
     -- ^ Send a command to the solver.
 
   , waitStop :: IO ExitCode
@@ -70,7 +71,7 @@ newSolverProcessNotify exe opts mbLog mbOnExit = do
     Nothing -> pure ()
     Just this -> void (forkIO (this =<< waitForProcess h))
   getResponse <- 
-    do txt <- BS.hGetContents hOut -- Read *all* output
+    do txt <- LBS.hGetContents hOut -- Read *all* output
        ref <- newIORef (unfoldr parseSExpr txt) -- Parse, and store result
        return $
          atomicModifyIORef ref $ \xs ->
@@ -78,8 +79,8 @@ newSolverProcessNotify exe opts mbLog mbOnExit = do
              [] -> (xs, Nothing)
              y:ys -> (ys, Just y)
   let cmd txt = do
-        info ("[send->] " <> BS.unpack txt)
-        BS.hPutStrLn hIn txt
+        info ("[send->] " <> LBS.unpack txt)
+        LBS.hPutStrLn hIn txt
       command c = do
         cmd c
         mb <- getResponse
