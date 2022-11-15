@@ -14,7 +14,7 @@ module SimpleSMT.Solver.Process
   ) where
 
 import SimpleSMT.Solver (Backend(..), Solver(..), setOption)
-import SimpleSMT.SExpr (SExpr(..), parseSExpr, showsSExpr) 
+import SimpleSMT.SExpr (SExpr(..), parseSExpr, showsSExpr)
 
 import Control.Monad(forever,when,void)
 import Control.Concurrent(forkIO)
@@ -29,7 +29,7 @@ import System.Process(runInteractiveProcess, waitForProcess, terminateProcess)
 import System.IO (hFlush, stdout, hClose)
 
 data SolverProcess = SolverProcess
-  { command   :: LBS.ByteString -> IO SExpr 
+  { command   :: LBS.ByteString -> IO SExpr
     -- ^ Send a command to the solver.
 
   , waitStop :: IO ExitCode
@@ -69,7 +69,7 @@ newSolverProcessNotify exe opts mbLog mbOnExit = do
   case mbOnExit of
     Nothing -> pure ()
     Just this -> void (forkIO (this =<< waitForProcess h))
-  getResponse <- 
+  getResponse <-
     do txt <- LBS.hGetContents hOut -- Read *all* output
        ref <- newIORef (unfoldr parseSExpr txt) -- Parse, and store result
        return $
