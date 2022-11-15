@@ -49,7 +49,7 @@ data Backend s =>
      Solver s =
   Solver
     { backend :: s
-    }  
+    }
 
 instance Backend s => Backend (Solver s) where
   send solver = send (backend solver)
@@ -58,7 +58,7 @@ command :: Backend s => Solver s -> SExpr -> IO SExpr
 command solver expr = do
   let cmd = serializeSExpr expr
   send solver cmd
-  
+
 -- | Load the contents of a file.
 loadFile :: Backend s => Solver s -> FilePath -> IO ()
 loadFile s file = loadString s =<< readFile file
