@@ -41,7 +41,6 @@ data SolverProcess = SolverProcess
 
 instance Backend SolverProcess where
   send solver cmd = command solver cmd
-  stop solver = waitStop solver
 
 -- | Start a new solver process.
 newSolverProcess :: String       {- ^ Executable -}            ->

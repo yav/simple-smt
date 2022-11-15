@@ -40,13 +40,10 @@ import Prelude hiding (not, and, or, abs, div, mod, concat, const)
 import qualified Control.Exception as X
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Char(isSpace)
-import System.Exit(ExitCode)
 
 class Backend s where
   send :: s -> LBS.ByteString -> IO SExpr
     -- ^ Send a command to the solver.
-  stop :: s -> IO ExitCode
-    -- ^ Wait for the solver to finish and exit gracefully.
 
 data Backend s =>
      Solver s =
@@ -56,7 +53,6 @@ data Backend s =>
 
 instance Backend s => Backend (Solver s) where
   send solver = send (backend solver)
-  stop solver = stop (backend solver)
 
 command :: Backend s => Solver s -> SExpr -> IO SExpr
 command solver expr = do
