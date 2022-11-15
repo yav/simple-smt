@@ -45,7 +45,7 @@ class Backend s where
   send :: s -> String -> IO SExpr
     -- ^ Send a command to the solver.
   stop :: s -> IO ExitCode
-    -- ^ Terminate the solver without waiting for it to finish.
+    -- ^ Wait for the solver to finish and exit gracefully.
 
 data Backend s =>
      Solver s =
