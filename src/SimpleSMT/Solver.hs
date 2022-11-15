@@ -38,11 +38,12 @@ module SimpleSMT.Solver
 import SimpleSMT.SExpr
 import Prelude hiding (not, and, or, abs, div, mod, concat, const)
 import qualified Control.Exception as X
+import qualified Data.ByteString.Char8 as BS
 import Data.Char(isSpace)
 import System.Exit(ExitCode)
 
 class Backend s where
-  send :: s -> String -> IO SExpr
+  send :: s -> BS.ByteString -> IO SExpr
     -- ^ Send a command to the solver.
   stop :: s -> IO ExitCode
     -- ^ Wait for the solver to finish and exit gracefully.
@@ -59,7 +60,7 @@ instance Backend s => Backend (Solver s) where
 
 command :: Backend s => Solver s -> SExpr -> IO SExpr
 command solver expr = do
-  let cmd = showsSExpr expr ""
+  let cmd = serializeSExpr expr
   send solver cmd
   
 -- | Load the contents of a file.

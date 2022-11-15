@@ -1,4 +1,5 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings #-}
 module SimpleSMT.Solver.Process
     -- * Basic Solver Interface
   ( SolverProcess
@@ -13,25 +14,28 @@ module SimpleSMT.Solver.Process
   ) where
 
 import SimpleSMT.Solver (Backend(..), Solver(..), setOption)
-import SimpleSMT.SExpr (SExpr(..), readSExpr, showsSExpr) 
+import SimpleSMT.SExpr (SExpr(..), parseSExpr, showsSExpr) 
 
 import Control.Monad(forever,when,void)
 import Control.Concurrent(forkIO)
 import qualified Control.Exception as X
+import qualified Data.ByteString.Char8 as BS
 import Data.IORef(newIORef, atomicModifyIORef, modifyIORef', readIORef,
                   writeIORef)
 import Data.List(unfoldr)
 import System.Exit(ExitCode)
 import System.Process(runInteractiveProcess, waitForProcess, terminateProcess)
-import System.IO (hFlush, hGetLine, hGetContents, hPutStrLn, stdout, hClose)
+import System.IO (hFlush, stdout, hClose)
 
 data SolverProcess = SolverProcess
-  { command   :: String -> IO SExpr 
+  { command   :: BS.ByteString -> IO SExpr 
+    -- ^ Send a command to the solver.
 
   , waitStop :: IO ExitCode
     -- ^ Wait for the solver to finish and exit gracefully.
 
   , forceStop :: IO ExitCode
+    -- ^ Terminate the solver without waiting for it to finish.
   }
 
 instance Backend SolverProcess where
@@ -60,29 +64,28 @@ newSolverProcessNotify exe opts mbLog mbOnExit = do
   _ <-
     forkIO $
     forever
-      (do errs <- hGetLine hErr
-          info ("[stderr] " ++ errs)) `X.catch` \X.SomeException {} -> return ()
+      (do errs <- BS.hGetLine hErr
+          info ("[stderr] " <> BS.unpack errs)) `X.catch` \X.SomeException {} -> return ()
   case mbOnExit of
     Nothing -> pure ()
     Just this -> void (forkIO (this =<< waitForProcess h))
   getResponse <- 
-    do txt <- hGetContents hOut -- Read *all* output
-       ref <- newIORef (unfoldr readSExpr txt) -- Parse, and store result
+    do txt <- BS.hGetContents hOut -- Read *all* output
+       ref <- newIORef (unfoldr parseSExpr txt) -- Parse, and store result
        return $
          atomicModifyIORef ref $ \xs ->
            case xs of
              [] -> (xs, Nothing)
              y:ys -> (ys, Just y)
   let cmd txt = do
-        info ("[send->] " ++ txt)
-        hPutStrLn hIn txt
-        hFlush hIn
+        info ("[send->] " <> BS.unpack txt)
+        BS.hPutStrLn hIn txt
       command c = do
         cmd c
         mb <- getResponse
         case mb of
           Just res -> do
-            info ("[<-recv] " ++ showsSExpr res "")
+            info ("[<-recv] " <> showsSExpr res "")
             return res
           Nothing -> fail "Missing response from solver"
       waitAndCleanup = do

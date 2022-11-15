@@ -1,11 +1,16 @@
 {-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms   #-}
+{-# LANGUAGE ViewPatterns      #-}
 -- | A module for interacting with an SMT solver, using SmtLib-2 format.
 module SimpleSMT.SExpr
     -- ** S-Expressions
   ( SExpr(..)
   , showsSExpr
+  , serializeSExpr
   , ppSExpr
   , readSExpr
+  , parseSExpr
   , Result(..)
   , Value(..)
   , sexprToVal
@@ -97,6 +102,10 @@ import Prelude hiding (not, and, or, abs, div, mod, concat, const)
 import qualified Prelude as P
 import Data.Char(isSpace, isDigit)
 import Data.Bits(testBit)
+import           Data.ByteString.Builder    (Builder, stringUtf8,
+                                             toLazyByteString)
+import qualified Data.ByteString.Char8      as BS
+import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.List (intersperse)
 import Text.Read(readMaybe)
 import Data.Ratio((%), numerator, denominator)
@@ -136,6 +145,13 @@ showsSExpr ex =
                        foldr (\e m -> showChar ' ' . showsSExpr e . m)
                        (showChar ')') es
 
+-- | Convert an s-expression to a (strict) null terminated bytestring.
+serializeSExpr :: SExpr -> BS.ByteString
+serializeSExpr = LBS.toStrict . toLazyByteString . (<> "\NUL") . renderSExpr
+  where renderSExpr :: SExpr -> Builder
+        renderSExpr (Atom x) = stringUtf8 x
+        renderSExpr (List es) =
+          "(" <> mconcat (intersperse " " [renderSExpr e | e <- es]) <> ")"
 
 -- | Show an s-expression in a somewhat readable fashion.
 --
@@ -182,6 +198,7 @@ ppSExpr = go 0
                                 many (map (new (n+3)) es) . showString ")"
 
       List es -> showString "(" . many (map (new (n+2)) es) . showString ")"
+
 
 -- | Parse an s-expression.
 --
@@ -231,6 +248,37 @@ sexprToVal expr =
   binDigit '0' = Just 0
   binDigit '1' = Just 1
   binDigit _   = Nothing
+
+  
+infixr 5 :<
+pattern (:<) :: Char -> BS.ByteString -> BS.ByteString
+pattern c :< rest <- (BS.uncons -> Just (c, rest))
+
+-- | Parse an s-expression.
+-- Like readSExpr but for ByteStrings.
+parseSExpr :: BS.ByteString -> Maybe (SExpr, BS.ByteString)
+parseSExpr (c :< more) | isSpace c = parseSExpr more
+parseSExpr (';' :< more) = parseSExpr $ BS.drop 1 $ BS.dropWhile (/= '\n') more
+parseSExpr ('|' :< more) = do
+  let (sym, '|' :< rest) = BS.break (== '|') more
+  Just (Atom $ BS.unpack $ BS.cons '|' $ BS.snoc sym '|', rest)
+parseSExpr ('(' :< more) = do
+  (es, rest) <- list more
+  return (List es, rest)
+  where
+    list :: BS.ByteString -> Maybe ([SExpr], BS.ByteString)
+    list (c :< more') | isSpace c = list more'
+    list (')' :< more') = return ([], more')
+    list more' = do
+      (e, rest) <- parseSExpr more'
+      (es, rest') <- list rest
+      return (e : es, rest')
+parseSExpr txt =
+  case BS.break end txt of
+    (atom, rest) | P.not (BS.null atom) -> Just (Atom $ BS.unpack atom, rest)
+    _                                   -> Nothing
+  where
+    end x = x == ')' || isSpace x
 
 -- | A constant, corresponding to a family indexed by some integers.
 fam :: String -> [Integer] -> SExpr
