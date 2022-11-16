@@ -58,10 +58,11 @@ initSolverWith solverSend lazy = do
     else return Nothing
   let solver = Solver solverSend solverQueue
   if lazy then
-    -- this should not be enabled when the queue is used, as it messes with parsing
-    -- the outputs of commands that are actually interesting
-    setOption solver ":print-success" "true"
-    else return ()
+      return ()
+    else
+      -- this should not be enabled when the queue is used, as it messes with parsing
+      -- the outputs of commands that are actually interesting
+      setOption solver ":print-success" "true"
   setOption solver ":produce-models" "true"
   return solver
 
