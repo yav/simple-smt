@@ -8,7 +8,6 @@ module SimpleSMT.Solver
   , simpleCommand
   , simpleCommandMaybe
   , loadFile
-  , loadString
     -- * Common SmtLib-2 Commands
   , setLogic
   , setLogicMaybe
@@ -61,28 +60,7 @@ command solver expr = do
 
 -- | Load the contents of a file.
 loadFile :: Solver -> FilePath -> IO ()
-loadFile s file = loadString s =<< readFile file
-
--- | Load a raw SMT string.
-loadString :: Solver -> String -> IO ()
-loadString s str = go (dropComments str)
-  where
-  go txt
-    | all isSpace txt = return ()
-    | otherwise =
-      case readSExpr txt of
-        Just (e,rest) -> command s e >> go rest
-        Nothing       -> fail $ unlines [ "Failed to parse SMT file."
-                                        , txt
-                                        ]
-
-  dropComments = unlines . map dropComment . lines
-  dropComment xs = case break (== ';') xs of
-                     (as',_:_) -> as'
-                     _ -> xs
-
-
-
+loadFile solver file = LBS.readFile file >>= send solver >> return ()
 
 -- | A command with no interesting result.
 ackCommand :: Solver -> SExpr -> IO ()
