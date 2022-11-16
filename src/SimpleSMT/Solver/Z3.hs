@@ -6,11 +6,11 @@
 module SimpleSMT.Solver.Z3
   ( Z3
   , newZ3Instance
+  , sendZ3Instance
   , freeZ3Instance
   ) where
 
-import SimpleSMT.Solver (Backend(..), Solver(..), setOption)
-import SimpleSMT.SExpr (parseSExpr)
+import SimpleSMT.SExpr (SExpr, parseSExpr)
 
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
@@ -36,21 +36,7 @@ C.include "z3.h"
 
 data Z3 = Z3 { context :: ForeignPtr LogicalContext }
 
-instance Backend Z3 where
-  send z3 cmd = do
-    let ctx = context z3
-    let cmd' = LBS.toStrict cmd
-    resp <- [CU.exp| const char* {
-                   Z3_eval_smtlib2_string($fptr-ptr:(Z3_context ctx), $bs-ptr:cmd')
-                   } |]
-      >>= BS.packCString
-    case parseSExpr $ LBS.fromStrict resp of
-      Nothing -> do
-        fail $ "Z3 failed with:\n" ++ BS.unpack resp
-      Just (sexpr, _) -> do
-        return sexpr
-
-newZ3Instance :: IO (Solver Z3)
+newZ3Instance :: IO Z3
 newZ3Instance = do
   let ctxFinalizer =
         [C.funPtr| void free_context(Z3_context ctx) {
@@ -64,10 +50,21 @@ newZ3Instance = do
                  Z3_del_config(cfg);
                  return ctx;
                  } |]
-  let solver = Solver (Z3 ctx)
-  setOption solver ":print-success" "true"
-  setOption solver ":produce-models" "true"
-  return solver
+  return $ Z3 ctx
+
+sendZ3Instance :: Z3 -> LBS.ByteString -> IO SExpr
+sendZ3Instance z3 cmd = do
+  let ctx = context z3
+  let cmd' = LBS.toStrict cmd
+  resp <- [CU.exp| const char* {
+                 Z3_eval_smtlib2_string($fptr-ptr:(Z3_context ctx), $bs-ptr:cmd')
+                 } |]
+    >>= BS.packCString
+  case parseSExpr $ LBS.fromStrict resp of
+    Nothing -> do
+      fail $ "Z3 failed with:\n" ++ BS.unpack resp
+    Just (sexpr, _) -> do
+      return sexpr
 
 freeZ3Instance :: Z3 -> IO ()
 freeZ3Instance = finalizeForeignPtr . context

@@ -1,8 +1,9 @@
 -- | A module for interacting with an SMT solver, using SmtLib-2 format.
 module SimpleSMT.Solver
     -- * Basic Solver Interface
-  ( Backend(..)
-  , Solver(..)
+  ( Solver(..)
+  , initSolverWith
+  , command
   , ackCommand
   , simpleCommand
   , simpleCommandMaybe
@@ -41,30 +42,29 @@ import qualified Control.Exception as X
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.Char(isSpace)
 
-class Backend s where
-  send :: s -> LBS.ByteString -> IO SExpr
+data Solver = Solver
+    { send :: LBS.ByteString -> IO SExpr
     -- ^ Send a command to the solver.
-
-data Backend s =>
-     Solver s =
-  Solver
-    { backend :: s
     }
 
-instance Backend s => Backend (Solver s) where
-  send solver = send (backend solver)
+initSolverWith :: (LBS.ByteString -> IO SExpr) -> IO Solver
+initSolverWith f = do
+  let solver = Solver f
+  setOption solver ":print-success" "true"
+  setOption solver ":produce-models" "true"
+  return solver
 
-command :: Backend s => Solver s -> SExpr -> IO SExpr
+command :: Solver -> SExpr -> IO SExpr
 command solver expr = do
   let cmd = serializeSExpr expr
   send solver cmd
 
 -- | Load the contents of a file.
-loadFile :: Backend s => Solver s -> FilePath -> IO ()
+loadFile :: Solver -> FilePath -> IO ()
 loadFile s file = loadString s =<< readFile file
 
 -- | Load a raw SMT string.
-loadString :: Backend s => Solver s -> String -> IO ()
+loadString :: Solver -> String -> IO ()
 loadString s str = go (dropComments str)
   where
   go txt
@@ -85,7 +85,7 @@ loadString s str = go (dropComments str)
 
 
 -- | A command with no interesting result.
-ackCommand :: Backend s => Solver s -> SExpr -> IO ()
+ackCommand :: Solver -> SExpr -> IO ()
 ackCommand proc c =
   do res <- command proc c
      case res of
@@ -97,13 +97,13 @@ ackCommand proc c =
                       ]
 
 -- | A command entirely made out of atoms, with no interesting result.
-simpleCommand :: Backend s => Solver s -> [String] -> IO ()
+simpleCommand :: Solver -> [String] -> IO ()
 simpleCommand proc = ackCommand proc . List . map Atom
 
 -- | Run a command and return True if successful, and False if unsupported.
 -- This is useful for setting options that unsupported by some solvers, but used
 -- by others.
-simpleCommandMaybe :: Backend s => Solver s -> [String] -> IO Bool
+simpleCommandMaybe :: Solver -> [String] -> IO Bool
 simpleCommandMaybe proc c =
   do res <- command proc (List (map Atom c))
      case res of
@@ -117,44 +117,44 @@ simpleCommandMaybe proc c =
 
 
 -- | Set a solver option.
-setOption :: Backend s => Solver s -> String -> String -> IO ()
+setOption :: Solver -> String -> String -> IO ()
 setOption s x y = simpleCommand s [ "set-option", x, y ]
 
 -- | Set a solver option, returning False if the option is unsupported.
-setOptionMaybe :: Backend s => Solver s -> String -> String -> IO Bool
+setOptionMaybe :: Solver -> String -> String -> IO Bool
 setOptionMaybe s x y = simpleCommandMaybe s [ "set-option", x, y ]
 
 -- | Set the solver's logic.  Usually, this should be done first.
-setLogic :: Backend s => Solver s -> String -> IO ()
+setLogic :: Solver -> String -> IO ()
 setLogic s x = simpleCommand s [ "set-logic", x ]
 
 
 -- | Set the solver's logic, returning False if the logic is unsupported.
-setLogicMaybe :: Backend s => Solver s -> String -> IO Bool
+setLogicMaybe :: Solver -> String -> IO Bool
 setLogicMaybe s x = simpleCommandMaybe s [ "set-logic", x ]
 
 -- | Request unsat cores.  Returns if the solver supports them.
-produceUnsatCores :: Backend s => Solver s -> IO Bool
+produceUnsatCores :: Solver -> IO Bool
 produceUnsatCores s = setOptionMaybe s ":produce-unsat-cores" "true"
 
 -- | Checkpoint state.  A special case of 'pushMany'.
-push :: Backend s => Solver s -> IO ()
+push :: Solver -> IO ()
 push proc = pushMany proc 1
 
 -- | Restore to last check-point.  A special case of 'popMany'.
-pop :: Backend s => Solver s -> IO ()
+pop :: Solver -> IO ()
 pop proc = popMany proc 1
 
 -- | Push multiple scopes.
-pushMany :: Backend s => Solver s -> Integer -> IO ()
+pushMany :: Solver -> Integer -> IO ()
 pushMany proc n = simpleCommand proc [ "push", show n ]
 
 -- | Pop multiple scopes.
-popMany :: Backend s => Solver s -> Integer -> IO ()
+popMany :: Solver -> Integer -> IO ()
 popMany proc n = simpleCommand proc [ "pop", show n ]
 
 -- | Execute the IO action in a new solver scope (push before, pop after)
-inNewScope :: Backend s => Solver s -> IO a -> IO a
+inNewScope :: Solver -> IO a -> IO a
 inNewScope s m =
   do push s
      m `X.finally` pop s
@@ -163,19 +163,19 @@ inNewScope s m =
 
 -- | Declare a constant.  A common abbreviation for 'declareFun'.
 -- For convenience, returns an the declared name as a constant expression.
-declare :: Backend s => Solver s -> String -> SExpr -> IO SExpr
+declare :: Solver -> String -> SExpr -> IO SExpr
 declare proc f t = declareFun proc f [] t
 
 -- | Declare a function or a constant.
 -- For convenience, returns an the declared name as a constant expression.
-declareFun :: Backend s => Solver s -> String -> [SExpr] -> SExpr -> IO SExpr
+declareFun :: Solver -> String -> [SExpr] -> SExpr -> IO SExpr
 declareFun proc f as' r =
   do ackCommand proc $ fun "declare-fun" [ Atom f, List as', r ]
      return (const f)
 
 -- | Declare an ADT using the format introduced in SmtLib 2.6.
 declareDatatype ::
-  Backend s => Solver s ->
+  Solver ->
   String {- ^ datatype name -} ->
   [String] {- ^ sort parameters -} ->
   [(String, [(String, SExpr)])] {- ^ constructors -} ->
@@ -199,7 +199,7 @@ declareDatatype proc t ps cs =
 
 -- | Declare a constant.  A common abbreviation for 'declareFun'.
 -- For convenience, returns the defined name as a constant expression.
-define :: Backend s => Solver s ->
+define :: Solver ->
           String {- ^ New symbol -} ->
           SExpr  {- ^ Symbol type -} ->
           SExpr  {- ^ Symbol definition -} ->
@@ -208,7 +208,7 @@ define proc f t e = defineFun proc f [] t e
 
 -- | Define a function or a constant.
 -- For convenience, returns an the defined name as a constant expression.
-defineFun :: Backend s => Solver s ->
+defineFun :: Solver ->
              String           {- ^ New symbol -} ->
              [(String,SExpr)] {- ^ Parameters, with types -} ->
              SExpr            {- ^ Type of result -} ->
@@ -222,7 +222,7 @@ defineFun proc f as' t e =
 -- | Define a recursive function or a constant.  For convenience,
 -- returns an the defined name as a constant expression.  This body
 -- takes the function name as an argument.
-defineFunRec :: Backend s => Solver s ->
+defineFunRec :: Solver ->
                 String           {- ^ New symbol -} ->
                 [(String,SExpr)] {- ^ Parameters, with types -} ->
                 SExpr            {- ^ Type of result -} ->
@@ -237,7 +237,7 @@ defineFunRec proc f as' t e =
 -- | Define a recursive function or a constant.  For convenience,
 -- returns an the defined name as a constant expression.  This body
 -- takes the function name as an argument.
-defineFunsRec :: Backend s => Solver s ->
+defineFunsRec :: Solver ->
                  [(String, [(String,SExpr)], SExpr, SExpr)] ->
                  IO ()
 defineFunsRec proc ds = ackCommand proc $ fun "define-funs-rec" [ decls, bodies ]
@@ -248,11 +248,11 @@ defineFunsRec proc ds = ackCommand proc $ fun "define-funs-rec" [ decls, bodies 
 
 
 -- | Assume a fact.
-assert :: Backend s => Solver s -> SExpr -> IO ()
+assert :: Solver -> SExpr -> IO ()
 assert proc e = ackCommand proc $ fun "assert" [e]
 
 -- | Check if the current set of assertion is consistent.
-check :: Backend s => Solver s -> IO Result
+check :: Solver -> IO Result
 check proc = do
   res <- command proc (List [Atom "check-sat"])
   case res of
@@ -269,7 +269,7 @@ check proc = do
 
 -- | Get the values of some s-expressions.
 -- Only valid after a 'Sat' result.
-getExprs :: Backend s => Solver s -> [SExpr] -> IO [(SExpr, Value)]
+getExprs :: Solver -> [SExpr] -> IO [(SExpr, Value)]
 getExprs proc vals =
   do res <- command proc $ List [ Atom "get-value", List vals ]
      case res of
@@ -292,24 +292,24 @@ getExprs proc vals =
 -- | Get the values of some constants in the current model.
 -- A special case of 'getExprs'.
 -- Only valid after a 'Sat' result.
-getConsts :: Backend s => Solver s -> [String] -> IO [(String, Value)]
+getConsts :: Solver -> [String] -> IO [(String, Value)]
 getConsts proc xs =
   do ans <- getExprs proc (map Atom xs)
      return [ (x,e) | (Atom x, e) <- ans ]
 
 
 -- | Get the value of a single expression.
-getExpr :: Backend s => Solver s -> SExpr -> IO Value
+getExpr :: Solver -> SExpr -> IO Value
 getExpr proc x =
   do [ (_,v) ] <- getExprs proc [x]
      return v
 
 -- | Get the value of a single constant.
-getConst :: Backend s => Solver s -> String -> IO Value
+getConst :: Solver -> String -> IO Value
 getConst proc x = getExpr proc (Atom x)
 
 -- | Returns the names of the (named) formulas involved in a contradiction.
-getUnsatCore :: Backend s => Solver s -> IO [String]
+getUnsatCore :: Solver -> IO [String]
 getUnsatCore s =
   do res <- command s $ List [ Atom "get-unsat-core" ]
      case res of

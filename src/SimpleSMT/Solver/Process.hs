@@ -13,8 +13,7 @@ module SimpleSMT.Solver.Process
   , logIndented
   ) where
 
-import SimpleSMT.Solver (Backend(..), Solver(..), setOption)
-import SimpleSMT.SExpr (SExpr(..), parseSExpr, showsSExpr)
+import SimpleSMT.SExpr (SExpr, parseSExpr, showsSExpr)
 
 import Control.Monad(forever,when,void)
 import Control.Concurrent(forkIO)
@@ -39,14 +38,11 @@ data SolverProcess = SolverProcess
     -- ^ Terminate the solver without waiting for it to finish.
   }
 
-instance Backend SolverProcess where
-  send solver cmd = command solver cmd
-
 -- | Start a new solver process.
 newSolverProcess :: String       {- ^ Executable -}            ->
              [String]     {- ^ Arguments -}             ->
              Maybe Logger {- ^ Optional logging here -} ->
-             IO (Solver SolverProcess)
+             IO SolverProcess
 newSolverProcess n xs l = newSolverProcessNotify n xs l Nothing
 
 newSolverProcessNotify ::
@@ -54,7 +50,7 @@ newSolverProcessNotify ::
   [String]      {- ^ Arguments -}             ->
   Maybe Logger  {- ^ Optional logging here -} ->
   Maybe (ExitCode -> IO ()) {- ^ Do this when the solver exits -} ->
-  IO (Solver SolverProcess)
+  IO SolverProcess
 newSolverProcessNotify exe opts mbLog mbOnExit = do
   (hIn, hOut, hErr, h) <- runInteractiveProcess exe opts Nothing Nothing
   let info a =
@@ -100,10 +96,8 @@ newSolverProcessNotify exe opts mbLog mbOnExit = do
       waitStop = do
         cmd "(exit)" `X.catch` (\X.SomeException {} -> pure ())
         waitAndCleanup
-      solver = Solver $ SolverProcess {..}
-  setOption solver ":print-success" "true"
-  setOption solver ":produce-models" "true"
-  return solver
+      process = SolverProcess {..}
+  return process
 
 --------------------------------------------------------------------------------
 
