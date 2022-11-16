@@ -55,7 +55,11 @@ newZ3Instance = do
 sendZ3Instance :: Z3 -> LBS.ByteString -> IO SExpr
 sendZ3Instance z3 cmd = do
   let ctx = context z3
-  let cmd' = LBS.toStrict cmd
+  -- Z3 requires null-terminated cstrings
+  -- appending the null character performs a memcpy so is inefficient
+  -- TODO a better solution would be to do this on the bytestring-build before it
+  -- is evaluated to a lazy bytestring
+  let cmd' = LBS.toStrict $ cmd `LBS.snoc` '\NUL'
   resp <- [CU.exp| const char* {
                  Z3_eval_smtlib2_string($fptr-ptr:(Z3_context ctx), $bs-ptr:cmd')
                  } |]

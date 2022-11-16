@@ -39,40 +39,80 @@ import SimpleSMT.SExpr
 import Prelude hiding (not, and, or, abs, div, mod, concat, const)
 import qualified Control.Exception as X
 import qualified Data.ByteString.Lazy.Char8 as LBS
-import Data.Char(isSpace)
+import Data.ByteString.Builder (Builder)
+import Data.IORef (IORef, newIORef, atomicModifyIORef)
 
 data Solver = Solver
     { send :: LBS.ByteString -> IO SExpr
     -- ^ Send a command to the solver.
+    , queue :: Maybe (IORef Builder)
     }
 
-initSolverWith :: (LBS.ByteString -> IO SExpr) -> IO Solver
-initSolverWith f = do
-  let solver = Solver f
-  setOption solver ":print-success" "true"
+-- | Create a new solver and initialize it with some options so that it behaves
+-- correctly for our use.
+initSolverWith :: (LBS.ByteString -> IO SExpr) -> Bool -> IO Solver
+initSolverWith solverSend lazy = do
+  solverQueue <- if lazy then do
+      ref <- newIORef mempty
+      return $ Just ref
+    else return Nothing
+  let solver = Solver solverSend solverQueue
+  if lazy then
+    -- this should not be enabled when the queue is used, as it messes with parsing
+    -- the outputs of commands that are actually interesting
+    setOption solver ":print-success" "true"
+    else return ()
   setOption solver ":produce-models" "true"
   return solver
 
+-- | Push a command on the solver's queue of commands to evaluate.
+-- The command must not produce any output when evaluated, unless it is the last
+-- command added before the queue is flushed.
+putQueue :: IORef Builder -> SExpr -> IO ()
+putQueue q expr = atomicModifyIORef q $ \cmds ->
+  (cmds <> renderSExpr expr, ())
+
+-- | Empty the queue of commands to evaluate and return its content as a bytestring
+-- builder.
+flushQueue :: IORef Builder -> IO Builder
+flushQueue q = atomicModifyIORef q $ \cmds ->
+    (mempty, cmds)
+
+-- | Have the solver evaluate a command in SExpr format.
+-- This forces the queued commands to be evaluated as well, but their results are
+-- *not* checked for correctness.
 command :: Solver -> SExpr -> IO SExpr
 command solver expr = do
-  let cmd = serializeSExpr expr
-  send solver cmd
+  let cmd = renderSExpr expr
+  case queue solver of
+    Nothing -> send solver $ serializeSingle cmd
+    Just q -> do
+      cmds <- (<> renderSExpr expr) <$> flushQueue q
+      send solver $ serializeBatch cmds
 
 -- | Load the contents of a file.
 loadFile :: Solver -> FilePath -> IO ()
 loadFile solver file = LBS.readFile file >>= send solver >> return ()
 
 -- | A command with no interesting result.
+-- In eager mode, the result is checked for correctness.
+-- In lazy mode, (unless the queue is flushed and evaluated
+-- right after) the command must not produce any output when evaluated, and
+-- its output is thus in particular not checked for correctness.
 ackCommand :: Solver -> SExpr -> IO ()
-ackCommand proc c =
-  do res <- command proc c
-     case res of
-       Atom "success" -> return ()
-       _  -> fail $ unlines
-                      [ "Unexpected result from the SMT solver:"
-                      , "  Expected: success"
-                      , "  Result: " ++ showsSExpr res ""
-                      ]
+ackCommand solver expr =
+  case queue solver of
+    Nothing -> do
+      let cmd = serializeSingle $ renderSExpr expr
+      res <- send solver cmd
+      case res of
+        Atom "success" -> return ()
+        _  -> fail $ unlines [
+          "Unexpected result from the SMT solver:"
+          , "  Expected: success"
+          , "  Result: " ++ showsSExpr res ""
+          ]
+    Just q -> putQueue q expr
 
 -- | A command entirely made out of atoms, with no interesting result.
 simpleCommand :: Solver -> [String] -> IO ()

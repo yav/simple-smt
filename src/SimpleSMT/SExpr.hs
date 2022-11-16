@@ -7,7 +7,9 @@ module SimpleSMT.SExpr
     -- ** S-Expressions
   ( SExpr(..)
   , showsSExpr
-  , serializeSExpr
+  , renderSExpr
+  , serializeSingle
+  , serializeBatch
   , ppSExpr
   , readSExpr
   , parseSExpr
@@ -102,8 +104,8 @@ import Prelude hiding (not, and, or, abs, div, mod, concat, const)
 import qualified Prelude as P
 import Data.Char(isSpace, isDigit)
 import Data.Bits(testBit)
-import           Data.ByteString.Builder    (Builder, stringUtf8,
-                                             toLazyByteString)
+import Data.ByteString.Builder (Builder, stringUtf8)
+import Data.ByteString.Builder.Extra (defaultChunkSize, smallChunkSize, toLazyByteStringWith, safeStrategy)
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.List (intersperse)
 import Text.Read(readMaybe)
@@ -144,13 +146,35 @@ showsSExpr ex =
                        foldr (\e m -> showChar ' ' . showsSExpr e . m)
                        (showChar ')') es
 
--- | Convert an s-expression to a (strict) null terminated bytestring.
-serializeSExpr :: SExpr -> LBS.ByteString
-serializeSExpr = toLazyByteString . (<> "\NUL") . renderSExpr
-  where renderSExpr :: SExpr -> Builder
-        renderSExpr (Atom x) = stringUtf8 x
-        renderSExpr (List es) =
-          "(" <> mconcat (intersperse " " [renderSExpr e | e <- es]) <> ")"
+-- | Evaluate a bytestring builder to a lazy bytestring.
+serializeWithChunkSizes :: Int -> Int -> Builder -> LBS.ByteString
+serializeWithChunkSizes firstChunkSize newChunksSize =
+  -- we're using the safe strategy here as not all backends consume the bytestring
+  -- immediately
+  -- TODO ideally the backend should be able to specify which strategy to use,
+  -- depending on whether they consume the bytestring immediately
+  -- in practice this doesn't seem to affecting speed at all so it is not urgent
+  toLazyByteStringWith (safeStrategy firstChunkSize newChunksSize) ""
+
+-- | Evaluate a bytestring builder corresponding to a single SMTLib2 command
+-- (the size of the buffer is expected to be small). The output is a lazy bytestring.
+serializeSingle :: Builder -> LBS.ByteString
+serializeSingle =
+  -- 256 is the first power of 2 that is bigger than the length of the longest
+  -- command with interesting output in isUnity, and 2048 is just four times this
+  -- because smallChunkSize * 4 = defaultChunkSize.
+  serializeWithChunkSizes 256 2048
+
+-- | Evaluate a bytestring builder corresponding to a batch of SMTLib2 commands
+-- (the size of the buffer is expected to be important). The output is a lazy bytestring.
+serializeBatch :: Builder -> LBS.ByteString
+serializeBatch = serializeWithChunkSizes smallChunkSize defaultChunkSize
+
+-- | Create a bytestring builder from an s-expression.
+renderSExpr :: SExpr -> Builder
+renderSExpr (Atom x) = stringUtf8 x
+renderSExpr (List es) =
+  "(" <> mconcat (intersperse " " [renderSExpr e | e <- es]) <> ")"
 
 -- | Show an s-expression in a somewhat readable fashion.
 --
@@ -248,7 +272,7 @@ sexprToVal expr =
   binDigit '1' = Just 1
   binDigit _   = Nothing
 
-  
+
 infixr 5 :<
 pattern (:<) :: Char -> LBS.ByteString -> LBS.ByteString
 pattern c :< rest <- (LBS.uncons -> Just (c, rest))
