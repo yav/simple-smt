@@ -46,11 +46,16 @@ data Solver = Solver
     { send :: LBS.ByteString -> IO SExpr
     -- ^ Send a command to the solver.
     , queue :: Maybe (IORef Builder)
+    -- ^ A queue to write commands that are to be sent to the solver lazily.
     }
 
 -- | Create a new solver and initialize it with some options so that it behaves
 -- correctly for our use.
-initSolverWith :: (LBS.ByteString -> IO SExpr) -> Bool -> IO Solver
+initSolverWith ::
+  -- | the function sending commands to the solver
+  (LBS.ByteString -> IO SExpr) ->
+  -- | whether to enable lazy mode
+  Bool -> IO Solver
 initSolverWith solverSend lazy = do
   solverQueue <- if lazy then do
       ref <- newIORef mempty
@@ -62,6 +67,10 @@ initSolverWith solverSend lazy = do
     else
       -- this should not be enabled when the queue is used, as it messes with parsing
       -- the outputs of commands that are actually interesting
+      -- TODO checking for correctness and enabling laziness can be made compatible
+      -- but it would require the solver backends to return list of s-expressions
+      -- alternatively, we may consider that the user wanting both features should
+      -- implement their own backend that deals with this
       setOption solver ":print-success" "true"
   setOption solver ":produce-models" "true"
   return solver
