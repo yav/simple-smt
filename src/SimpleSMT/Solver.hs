@@ -2,6 +2,7 @@
 module SimpleSMT.Solver
     -- * Basic Solver Interface
   ( Solver(..)
+  , Backend(..)
   , initSolverWith
   , command
   , ackCommand
@@ -40,28 +41,65 @@ import Prelude hiding (not, and, or, abs, div, mod, concat, const)
 import qualified Control.Exception as X
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.ByteString.Builder (Builder)
-import Data.IORef (IORef, newIORef, atomicModifyIORef)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef, atomicModifyIORef)
+
+data Backend = Backend {
+  send :: LBS.ByteString -> IO ()
+  -- ^ Send a command to the backend.
+  , response :: IORef LBS.ByteString
+  -- ^ A buffer holding the solver's responses to the commands.
+  }
+
+recv :: IORef LBS.ByteString -> IO SExpr
+recv resp = do
+  (expr, next) <- parseSExpr <$> readIORef resp
+    >>= maybe (fail "parsing failed") return
+  writeIORef resp next
+  return expr
+
+
+type Queue = IORef Builder
+
+-- | Push a command on the solver's queue of commands to evaluate.
+-- The command must not produce any output when evaluated, unless it is the last
+-- command added before the queue is flushed.
+putQueue :: Queue -> SExpr -> IO ()
+putQueue q expr = atomicModifyIORef q $ \cmds ->
+  (cmds <> renderSExpr expr, ())
+
+-- | Empty the queue of commands to evaluate and return its content as a bytestring
+-- builder.
+flushQueue :: Queue -> IO Builder
+flushQueue q = atomicModifyIORef q $ \cmds ->
+    (mempty, cmds)
 
 data Solver = Solver
-    { send :: LBS.ByteString -> IO SExpr
-    -- ^ Send a command to the solver.
-    , queue :: Maybe (IORef Builder)
-    -- ^ A queue to write commands that are to be sent to the solver lazily.
-    }
+  { backend :: Backend
+  -- ^ The backend processing the commands.
+  , queue :: Maybe Queue
+  -- ^ A queue to write commands that are to be sent to the solver lazily.
+  }
+
+-- | Send a command to the solver.
+sendSolver :: Solver -> LBS.ByteString -> IO ()
+sendSolver = send . backend
+
+-- | Read a single s-expression outputted by the solver.
+recvSolver :: Solver -> IO SExpr
+recvSolver = recv . response . backend
 
 -- | Create a new solver and initialize it with some options so that it behaves
 -- correctly for our use.
 initSolverWith ::
-  -- | the function sending commands to the solver
-  (LBS.ByteString -> IO SExpr) ->
+  Backend ->
   -- | whether to enable lazy mode
   Bool -> IO Solver
-initSolverWith solverSend lazy = do
+initSolverWith solverBackend lazy = do
   solverQueue <- if lazy then do
       ref <- newIORef mempty
       return $ Just ref
     else return Nothing
-  let solver = Solver solverSend solverQueue
+  let solver = Solver solverBackend solverQueue
   if lazy then
       return ()
     else
@@ -75,18 +113,6 @@ initSolverWith solverSend lazy = do
   setOption solver ":produce-models" "true"
   return solver
 
--- | Push a command on the solver's queue of commands to evaluate.
--- The command must not produce any output when evaluated, unless it is the last
--- command added before the queue is flushed.
-putQueue :: IORef Builder -> SExpr -> IO ()
-putQueue q expr = atomicModifyIORef q $ \cmds ->
-  (cmds <> renderSExpr expr, ())
-
--- | Empty the queue of commands to evaluate and return its content as a bytestring
--- builder.
-flushQueue :: IORef Builder -> IO Builder
-flushQueue q = atomicModifyIORef q $ \cmds ->
-    (mempty, cmds)
 
 -- | Have the solver evaluate a command in SExpr format.
 -- This forces the queued commands to be evaluated as well, but their results are
@@ -94,15 +120,15 @@ flushQueue q = atomicModifyIORef q $ \cmds ->
 command :: Solver -> SExpr -> IO SExpr
 command solver expr = do
   let cmd = renderSExpr expr
-  case queue solver of
-    Nothing -> send solver $ serializeSingle cmd
-    Just q -> do
-      cmds <- (<> renderSExpr expr) <$> flushQueue q
-      send solver $ serializeBatch cmds
+  sendSolver solver =<<
+    case queue solver of
+      Nothing -> return $ serializeSingle cmd
+      Just q -> serializeBatch <$> (<> renderSExpr expr) <$> flushQueue q
+  recvSolver solver
 
 -- | Load the contents of a file.
 loadFile :: Solver -> FilePath -> IO ()
-loadFile solver file = LBS.readFile file >>= send solver >> return ()
+loadFile solver file = LBS.readFile file >>= sendSolver solver >> return ()
 
 -- | A command with no interesting result.
 -- In eager mode, the result is checked for correctness.
@@ -114,7 +140,7 @@ ackCommand solver expr =
   case queue solver of
     Nothing -> do
       let cmd = serializeSingle $ renderSExpr expr
-      res <- send solver cmd
+      res <- sendSolver solver cmd >> recvSolver solver
       case res of
         Atom "success" -> return ()
         _  -> fail $ unlines [

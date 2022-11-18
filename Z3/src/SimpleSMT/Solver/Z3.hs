@@ -5,15 +5,17 @@
 
 module SimpleSMT.Solver.Z3
   ( Z3
+  , toBackend
   , newZ3Instance
-  , sendZ3Instance
   , freeZ3Instance
   ) where
 
+import SimpleSMT.Solver (Backend(..))
 import SimpleSMT.SExpr (SExpr, parseSExpr)
 
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
+import Data.IORef (newIORef, modifyIORef)
 import qualified Data.Map as M
 import Foreign.Ptr (Ptr)
 import Foreign.ForeignPtr (ForeignPtr, newForeignPtr, finalizeForeignPtr)
@@ -52,23 +54,22 @@ newZ3Instance = do
                  } |]
   return $ Z3 ctx
 
-sendZ3Instance :: Z3 -> LBS.ByteString -> IO SExpr
-sendZ3Instance z3 cmd = do
-  let ctx = context z3
-  -- Z3 requires null-terminated cstrings
-  -- appending the null character performs a memcpy so is inefficient
-  -- TODO a better solution would be to do this on the bytestring-build before it
-  -- is evaluated to a lazy bytestring
-  let cmd' = LBS.toStrict $ cmd `LBS.snoc` '\NUL'
-  resp <- [CU.exp| const char* {
-                 Z3_eval_smtlib2_string($fptr-ptr:(Z3_context ctx), $bs-ptr:cmd')
-                 } |]
-    >>= BS.packCString
-  case parseSExpr $ LBS.fromStrict resp of
-    Nothing -> do
-      fail $ "Z3 failed with:\n" ++ BS.unpack resp
-    Just (sexpr, _) -> do
-      return sexpr
+toBackend :: Z3 -> IO Backend
+toBackend z3 = do
+  resp <- newIORef mempty
+  return $
+    flip Backend resp $ \cmd -> do
+      let ctx = context z3
+      -- Z3 requires null-terminated cstrings
+      -- appending the null character performs a memcpy so is inefficient
+      -- TODO a better solution would be to do this on the bytestring-build before it
+      -- is evaluated to a lazy bytestring
+      let cmd' = LBS.toStrict $ cmd `LBS.snoc` '\NUL'
+      result <- BS.packCString =<<
+               [CU.exp| const char* {
+                   Z3_eval_smtlib2_string($fptr-ptr:(Z3_context ctx), $bs-ptr:cmd')
+                   }|]
+      modifyIORef resp (<> LBS.fromStrict result)
 
 freeZ3Instance :: Z3 -> IO ()
 freeZ3Instance = finalizeForeignPtr . context

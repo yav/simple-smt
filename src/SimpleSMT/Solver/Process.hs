@@ -2,9 +2,10 @@
 {-# LANGUAGE OverloadedStrings #-}
 module SimpleSMT.Solver.Process
     -- * Basic Solver Interface
-  ( SolverProcess
+  ( SolverProcess(..)
   , newSolverProcess
   , newSolverProcessNotify
+  , toBackend
   -- ** Logging and Debugging
   , Logger(..)
   , newLogger
@@ -13,26 +14,27 @@ module SimpleSMT.Solver.Process
   , logIndented
   ) where
 
-import SimpleSMT.SExpr (SExpr, parseSExpr, showsSExpr)
+import qualified SimpleSMT.Solver as Solver
 
 import Control.Monad(forever,when,void)
 import Control.Concurrent(forkIO)
 import qualified Control.Exception as X
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
-import Data.IORef(newIORef, atomicModifyIORef, modifyIORef', readIORef,
-                  writeIORef)
-import Data.List(unfoldr)
+import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import System.Exit(ExitCode)
 import System.Process(runInteractiveProcess, waitForProcess, terminateProcess)
 import System.IO (hFlush, stdout, hClose)
 
 data SolverProcess = SolverProcess
-  { command   :: LBS.ByteString -> IO SExpr
-    -- ^ Send a command to the solver.
+  { cmd :: LBS.ByteString -> IO ()
+  -- ^ Send a command to the solver.
+
+  , getResponse :: IORef LBS.ByteString
+  -- ^ A buffer holding the solver's response.
 
   , waitStop :: IO ExitCode
-    -- ^ Wait for the solver to finish and exit gracefully.
+  -- ^ Wait for the solver to finish and exit gracefully.
 
   , forceStop :: IO ExitCode
     -- ^ Terminate the solver without waiting for it to finish.
@@ -53,37 +55,11 @@ newSolverProcessNotify ::
   IO SolverProcess
 newSolverProcessNotify exe opts mbLog mbOnExit = do
   (hIn, hOut, hErr, h) <- runInteractiveProcess exe opts Nothing Nothing
+
   let info a =
         case mbLog of
           Nothing -> return ()
           Just l -> logMessage l a
-  _ <-
-    forkIO $
-    forever
-      (do errs <- BS.hGetLine hErr
-          info ("[stderr] " <> BS.unpack errs)) `X.catch` \X.SomeException {} -> return ()
-  case mbOnExit of
-    Nothing -> pure ()
-    Just this -> void (forkIO (this =<< waitForProcess h))
-  getResponse <-
-    do txt <- LBS.hGetContents hOut -- Read *all* output
-       ref <- newIORef (unfoldr parseSExpr txt) -- Parse, and store result
-       return $
-         atomicModifyIORef ref $ \xs ->
-           case xs of
-             [] -> (xs, Nothing)
-             y:ys -> (ys, Just y)
-  let cmd txt = do
-        info ("[send->] " <> LBS.unpack txt)
-        LBS.hPutStrLn hIn txt
-      command c = do
-        cmd c
-        mb <- getResponse
-        case mb of
-          Just res -> do
-            info ("[<-recv] " <> showsSExpr res "")
-            return res
-          Nothing -> fail "Missing response from solver"
       waitAndCleanup = do
         ec <- waitForProcess h
         X.catch
@@ -96,9 +72,24 @@ newSolverProcessNotify exe opts mbLog mbOnExit = do
       waitStop = do
         cmd "(exit)" `X.catch` (\X.SomeException {} -> pure ())
         waitAndCleanup
-      process = SolverProcess {..}
-  return process
+      cmd txt = do
+        info ("[send->] " <> LBS.unpack txt)
+        LBS.hPutStrLn hIn txt
+  processResponse <- newIORef =<< LBS.hGetContents hOut -- Read *all* output
 
+  _ <- forkIO $ forever
+    (do
+        errs <- BS.hGetLine hErr
+        info ("[stderr] " <> BS.unpack errs))
+    `X.catch` \X.SomeException {} -> return ()
+  case mbOnExit of
+    Nothing -> pure ()
+    Just this -> void (forkIO (this =<< waitForProcess h))
+
+  return $ SolverProcess cmd processResponse waitStop forceStop
+
+toBackend :: SolverProcess -> Solver.Backend
+toBackend process = Solver.Backend (cmd process) (getResponse process)
 --------------------------------------------------------------------------------
 
 -- | Log messages with minimal formatting. Mostly for debugging.
