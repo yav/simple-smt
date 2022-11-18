@@ -6,6 +6,7 @@ module SimpleSMT.Solver.Process
   , new
   , wait
   , stop
+  , with
   , toBackend
   ) where
 
@@ -82,6 +83,14 @@ stop :: SolverProcess -> IO ()
 stop solver = do
   cancel $ errorReader solver
   stopProcess $ process solver
+
+-- | Create a solver process, use it to make a computation and stop it.
+with :: String -> [String] -> (BS.ByteString -> IO ()) -> (SolverProcess -> IO a) -> IO a
+with exe args logger todo = do
+  solverProcess <- new exe args logger
+  result <- todo solverProcess
+  stop solverProcess
+  return result
 
 -- | Make the solver process into a solver backend.
 toBackend :: SolverProcess -> IO Solver.Backend

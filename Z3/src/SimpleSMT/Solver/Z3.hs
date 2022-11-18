@@ -4,10 +4,11 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module SimpleSMT.Solver.Z3
-  ( Z3
-  , toBackend
+  ( Z3(..)
   , new
   , free
+  , with
+  , toBackend
   ) where
 
 import qualified SimpleSMT.Solver as Solver
@@ -35,8 +36,12 @@ C.context
      })
 C.include "z3.h"
 
-data Z3 = Z3 { context :: ForeignPtr LogicalContext }
+data Z3 = Z3
+    { context :: ForeignPtr LogicalContext
+    -- ^ A black-box representing the internal state of the solver.
+    }
 
+-- | Create a new solver instance.
 new :: IO Z3
 new = do
   let ctxFinalizer =
@@ -53,6 +58,19 @@ new = do
                  } |]
   return $ Z3 ctx
 
+-- | Release the resources associated with a Z3 instance.
+free :: Z3 -> IO ()
+free = finalizeForeignPtr . context
+
+-- | Create a Z3 instance, use it to run a computation and release its resources.
+with :: (Z3 -> IO a) -> IO a
+with todo = do
+  z3 <- new
+  result <- todo z3
+  free z3
+  return result
+
+-- | Create a solver backend out of a Z3 instance.
 toBackend :: Z3 -> IO Solver.Backend
 toBackend z3 = do
   resp <- newIORef mempty
@@ -70,5 +88,3 @@ toBackend z3 = do
                    }|]
       modifyIORef resp (<> LBS.fromStrict result)
 
-free :: Z3 -> IO ()
-free = finalizeForeignPtr . context
