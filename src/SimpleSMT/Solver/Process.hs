@@ -1,7 +1,6 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE OverloadedStrings #-}
 module SimpleSMT.Solver.Process
-    -- * Basic Solver Interface
   ( SolverProcess(..)
   , new
   , wait
