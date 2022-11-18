@@ -6,12 +6,11 @@
 module SimpleSMT.Solver.Z3
   ( Z3
   , toBackend
-  , newZ3Instance
-  , freeZ3Instance
+  , new
+  , free
   ) where
 
-import SimpleSMT.Solver (Backend(..))
-import SimpleSMT.SExpr (SExpr, parseSExpr)
+import qualified SimpleSMT.Solver as Solver
 
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
@@ -38,8 +37,8 @@ C.include "z3.h"
 
 data Z3 = Z3 { context :: ForeignPtr LogicalContext }
 
-newZ3Instance :: IO Z3
-newZ3Instance = do
+new :: IO Z3
+new = do
   let ctxFinalizer =
         [C.funPtr| void free_context(Z3_context ctx) {
                  Z3_del_context(ctx);
@@ -54,11 +53,11 @@ newZ3Instance = do
                  } |]
   return $ Z3 ctx
 
-toBackend :: Z3 -> IO Backend
+toBackend :: Z3 -> IO Solver.Backend
 toBackend z3 = do
   resp <- newIORef mempty
   return $
-    flip Backend resp $ \cmd -> do
+    flip Solver.Backend resp $ \cmd -> do
       let ctx = context z3
       -- Z3 requires null-terminated cstrings
       -- appending the null character performs a memcpy so is inefficient
@@ -71,5 +70,5 @@ toBackend z3 = do
                    }|]
       modifyIORef resp (<> LBS.fromStrict result)
 
-freeZ3Instance :: Z3 -> IO ()
-freeZ3Instance = finalizeForeignPtr . context
+free :: Z3 -> IO ()
+free = finalizeForeignPtr . context

@@ -3,9 +3,9 @@
 module SimpleSMT.Solver.Process
     -- * Basic Solver Interface
   ( SolverProcess(..)
-  , newSolverProcess
-  , waitSolverProcess
-  , stopSolverProcess
+  , new
+  , wait
+  , stop
   , toBackend
   ) where
 
@@ -43,14 +43,14 @@ data SolverProcess =
     }
 
 -- | Run a solver as a process.
-newSolverProcess ::
+new ::
   -- | The command to run the solver.
   String ->
   -- | Arguments to pass to the solver's command.
   [String] ->
   -- | A function for logging the solver's creation, errors and termination.
   (BS.ByteString -> IO ()) -> IO SolverProcess
-newSolverProcess exe args logger = do
+new exe args logger = do
   solverProcess <-
     startProcess $
     setStdin createLoggedPipe $
@@ -72,14 +72,14 @@ newSolverProcess exe args logger = do
               logger $ BS.pack $ show (ex :: X.IOException))
 
 -- | Wait for the process to exit and cleanup its resources.
-waitSolverProcess :: SolverProcess -> IO ExitCode
-waitSolverProcess solver = do
+wait :: SolverProcess -> IO ExitCode
+wait solver = do
   cancel $ errorReader solver
   waitExitCode $ process solver
 
 -- | Terminate the process, wait for it to actually exit and cleanup its resources.
-stopSolverProcess :: SolverProcess -> IO ()
-stopSolverProcess solver = do
+stop :: SolverProcess -> IO ()
+stop solver = do
   cancel $ errorReader solver
   stopProcess $ process solver
 
