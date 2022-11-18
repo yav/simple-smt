@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 -- | A module for interacting with an SMT solver, using SmtLib-2 format.
 module SimpleSMT.Solver
     -- * Basic Solver Interface
@@ -37,7 +39,7 @@ module SimpleSMT.Solver
   ) where
 
 import SimpleSMT.SExpr
-import Prelude hiding (not, and, or, abs, div, mod, concat, const)
+import Prelude hiding (not, and, or, abs, div, mod, concat, const, log)
 import qualified Control.Exception as X
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.ByteString.Builder (Builder)
@@ -49,14 +51,6 @@ data Backend = Backend {
   , response :: IORef LBS.ByteString
   -- ^ A buffer holding the solver's responses to the commands.
   }
-
-recv :: IORef LBS.ByteString -> IO SExpr
-recv resp = do
-  (expr, next) <- parseSExpr <$> readIORef resp
-    >>= maybe (fail "parsing failed") return
-  writeIORef resp next
-  return expr
-
 
 type Queue = IORef Builder
 
@@ -78,28 +72,47 @@ data Solver = Solver
   -- ^ The backend processing the commands.
   , queue :: Maybe Queue
   -- ^ A queue to write commands that are to be sent to the solver lazily.
+  , log :: LBS.ByteString -> IO ()
+  -- ^ The function used for logging the solver's activity.
   }
 
 -- | Send a command to the solver.
 sendSolver :: Solver -> LBS.ByteString -> IO ()
-sendSolver = send . backend
+sendSolver solver cmd = do
+  log solver $ "[send] " <> cmd
+  send (backend solver) cmd
 
 -- | Read a single s-expression outputted by the solver.
 recvSolver :: Solver -> IO SExpr
-recvSolver = recv . response . backend
+recvSolver solver = do
+  let solverResponse = response $ backend solver
+  resp <- readIORef solverResponse
+  (expr, next) <-
+    case parseSExpr resp of
+      Nothing -> do
+        log solver $ "[error] failed to parse solver output:\n" <> resp
+        fail $
+          unlines ["Unexpected response from the SMT solver:", "parsing failed"]
+      Just res -> return res
+  writeIORef solverResponse next
+  log solver $ "[recv] " <> (serializeSingle $ renderSExpr expr)
+  return expr
 
 -- | Create a new solver and initialize it with some options so that it behaves
 -- correctly for our use.
 initSolverWith ::
-  Backend ->
+     Backend
   -- | whether to enable lazy mode
-  Bool -> IO Solver
-initSolverWith solverBackend lazy = do
+  -> Bool
+  -- | function for logging the solver's activity
+  -> (LBS.ByteString -> IO ())
+  -> IO Solver
+initSolverWith solverBackend lazy logger = do
   solverQueue <- if lazy then do
       ref <- newIORef mempty
       return $ Just ref
     else return Nothing
-  let solver = Solver solverBackend solverQueue
+  let solver = Solver solverBackend solverQueue logger
   if lazy then
       return ()
     else

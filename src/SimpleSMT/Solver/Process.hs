@@ -73,7 +73,6 @@ newSolverProcessNotify exe opts mbLog mbOnExit = do
         cmd "(exit)" `X.catch` (\X.SomeException {} -> pure ())
         waitAndCleanup
       cmd txt = do
-        info ("[send->] " <> LBS.unpack txt)
         LBS.hPutStrLn hIn txt
   processResponse <- newIORef =<< LBS.hGetContents hOut -- Read *all* output
 
