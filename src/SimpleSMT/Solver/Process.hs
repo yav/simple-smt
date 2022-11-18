@@ -4,142 +4,89 @@ module SimpleSMT.Solver.Process
     -- * Basic Solver Interface
   ( SolverProcess(..)
   , newSolverProcess
-  , newSolverProcessNotify
+  , waitSolverProcess
+  , stopSolverProcess
   , toBackend
-  -- ** Logging and Debugging
-  , Logger(..)
-  , newLogger
-  , withLogLevel
-  , logMessageAt
-  , logIndented
   ) where
 
 import qualified SimpleSMT.Solver as Solver
 
-import Control.Monad(forever,when,void)
-import Control.Concurrent(forkIO)
+import Control.Monad (forever)
+import Control.Concurrent.Async (Async, async, cancel)
 import qualified Control.Exception as X
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
-import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
+import Data.IORef (newIORef)
 import System.Exit(ExitCode)
-import System.Process(runInteractiveProcess, waitForProcess, terminateProcess)
-import System.IO (hFlush, stdout, hClose)
+import System.IO (Handle, hClose)
+import qualified System.Process.Typed as P (proc)
+import System.Process.Typed
+  ( Process
+  , getStderr
+  , getStdin
+  , getStdout
+  , mkPipeStreamSpec
+  , setStderr
+  , setStdin
+  , setStdout
+  , startProcess
+  , stopProcess
+  , waitExitCode
+  )
 
-data SolverProcess = SolverProcess
-  { cmd :: LBS.ByteString -> IO ()
-  -- ^ Send a command to the solver.
+data SolverProcess =
+  SolverProcess
+    { process :: Process Handle Handle Handle
+    -- ^ The process running the solver.
+    , errorReader :: Async ()
+    -- ^ A process reading the solver's error messages and logging them.
+    }
 
-  , getResponse :: IORef LBS.ByteString
-  -- ^ A buffer holding the solver's response.
+-- | Run a solver as a process.
+newSolverProcess ::
+  -- | The command to run the solver.
+  String ->
+  -- | Arguments to pass to the solver's command.
+  [String] ->
+  -- | A function for logging the solver's creation, errors and termination.
+  (BS.ByteString -> IO ()) -> IO SolverProcess
+newSolverProcess exe args logger = do
+  solverProcess <-
+    startProcess $
+    setStdin createLoggedPipe $
+    setStdout createLoggedPipe $ setStderr createLoggedPipe $ P.proc exe args
+  -- log error messages created by the backend
+  solverErrorReader <-
+    async $
+    forever
+      (do errs <- BS.hGetLine $ getStderr solverProcess
+          logger $ "[stderr] " <> errs) `X.catch` \X.SomeException {} ->
+      return ()
+  return $ SolverProcess solverProcess solverErrorReader
+  where
+    createLoggedPipe =
+      mkPipeStreamSpec $ \_ h ->
+        return
+          ( h
+          , hClose h `X.catch` \ex ->
+              logger $ BS.pack $ show (ex :: X.IOException))
 
-  , waitStop :: IO ExitCode
-  -- ^ Wait for the solver to finish and exit gracefully.
+-- | Wait for the process to exit and cleanup its resources.
+waitSolverProcess :: SolverProcess -> IO ExitCode
+waitSolverProcess solver = do
+  cancel $ errorReader solver
+  waitExitCode $ process solver
 
-  , forceStop :: IO ExitCode
-    -- ^ Terminate the solver without waiting for it to finish.
-  }
+-- | Terminate the process, wait for it to actually exit and cleanup its resources.
+stopSolverProcess :: SolverProcess -> IO ()
+stopSolverProcess solver = do
+  cancel $ errorReader solver
+  stopProcess $ process solver
 
--- | Start a new solver process.
-newSolverProcess :: String       {- ^ Executable -}            ->
-             [String]     {- ^ Arguments -}             ->
-             Maybe Logger {- ^ Optional logging here -} ->
-             IO SolverProcess
-newSolverProcess n xs l = newSolverProcessNotify n xs l Nothing
-
-newSolverProcessNotify ::
-  String        {- ^ Executable -}            ->
-  [String]      {- ^ Arguments -}             ->
-  Maybe Logger  {- ^ Optional logging here -} ->
-  Maybe (ExitCode -> IO ()) {- ^ Do this when the solver exits -} ->
-  IO SolverProcess
-newSolverProcessNotify exe opts mbLog mbOnExit = do
-  (hIn, hOut, hErr, h) <- runInteractiveProcess exe opts Nothing Nothing
-
-  let info a =
-        case mbLog of
-          Nothing -> return ()
-          Just l -> logMessage l a
-      waitAndCleanup = do
-        ec <- waitForProcess h
-        X.catch
-          (do hClose hIn
-              hClose hOut
-              hClose hErr)
-          (\ex -> info (show (ex :: X.IOException)))
-        return ec
-      forceStop = terminateProcess h *> waitAndCleanup
-      waitStop = do
-        cmd "(exit)" `X.catch` (\X.SomeException {} -> pure ())
-        waitAndCleanup
-      cmd txt = do
-        LBS.hPutStrLn hIn txt
-  processResponse <- newIORef =<< LBS.hGetContents hOut -- Read *all* output
-
-  _ <- forkIO $ forever
-    (do
-        errs <- BS.hGetLine hErr
-        info ("[stderr] " <> BS.unpack errs))
-    `X.catch` \X.SomeException {} -> return ()
-  case mbOnExit of
-    Nothing -> pure ()
-    Just this -> void (forkIO (this =<< waitForProcess h))
-
-  return $ SolverProcess cmd processResponse waitStop forceStop
-
-toBackend :: SolverProcess -> Solver.Backend
-toBackend process = Solver.Backend (cmd process) (getResponse process)
---------------------------------------------------------------------------------
-
--- | Log messages with minimal formatting. Mostly for debugging.
-data Logger = Logger
-  { logMessage :: String -> IO ()
-    -- ^ Log a message.
-
-  , logLevel   :: IO Int
-
-  , logSetLevel:: Int -> IO ()
-
-  , logTab     :: IO ()
-    -- ^ Increase indentation.
-
-  , logUntab   :: IO ()
-    -- ^ Decrease indentation.
-  }
-
--- | Run an IO action with the logger set to a specific level, restoring it when
--- done.
-withLogLevel :: Logger -> Int -> IO a -> IO a
-withLogLevel Logger { .. } l m =
-  do l0 <- logLevel
-     X.bracket_ (logSetLevel l) (logSetLevel l0) m
-
-logIndented :: Logger -> IO a -> IO a
-logIndented Logger { .. } = X.bracket_ logTab logUntab
-
--- | Log a message at a specific log level.
-logMessageAt :: Logger -> Int -> String -> IO ()
-logMessageAt logger l msg = withLogLevel logger l (logMessage logger msg)
-
--- | A simple stdout logger.  Shows only messages logged at a level that is
--- greater than or equal to the passed level.
-newLogger :: Int -> IO Logger
-newLogger l =
-  do tab <- newIORef 0
-     lev <- newIORef 0
-     let logLevel    = readIORef lev
-         logSetLevel = writeIORef lev
-
-         shouldLog m =
-           do cl <- logLevel
-              when (cl >= l) m
-
-         logMessage x = shouldLog $
-           do let ls = lines x
-              t <- readIORef tab
-              putStr $ unlines [ replicate t ' ' ++ l' | l' <- ls ]
-              hFlush stdout
-
-         logTab   = shouldLog (modifyIORef' tab (+ 2))
-         logUntab = shouldLog (modifyIORef' tab (subtract 2))
-     return Logger { .. }
+-- | Make the solver process into a solver backend.
+toBackend :: SolverProcess -> IO Solver.Backend
+toBackend solver = do
+  response <- (LBS.hGetContents $ getStdout $ process solver) >>= newIORef
+  return $
+    flip Solver.Backend response $ \cmd ->
+      flip LBS.hPutStrLn cmd $ getStdin $ process solver
