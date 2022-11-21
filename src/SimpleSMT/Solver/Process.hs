@@ -14,9 +14,9 @@ import qualified SimpleSMT.Solver as Solver
 import Control.Monad (forever)
 import Control.Concurrent.Async (Async, async, cancel)
 import qualified Control.Exception as X
+import Data.ByteString.Builder (Builder, lazyByteString, toLazyByteString)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
-import Data.IORef (newIORef)
 import System.Exit(ExitCode)
 import System.IO (Handle, hClose)
 import qualified System.Process.Typed as P (proc)
@@ -92,9 +92,16 @@ with exe args logger todo = do
   return result
 
 -- | Make the solver process into a solver backend.
-toBackend :: SolverProcess -> IO Solver.Backend
-toBackend solver = do
-  response <- (LBS.hGetContents $ getStdout $ process solver) >>= newIORef
-  return $
-    flip Solver.Backend response $ \cmd ->
-      flip LBS.hPutStrLn cmd $ getStdin $ process solver
+toBackend :: SolverProcess -> Solver.Backend
+toBackend solver =
+  Solver.Backend $ \cmd -> do
+    LBS.hPutStrLn (getStdin $ process solver) cmd
+    toLazyByteString <$> (hGetContentsEager mempty $ getStdout $ process solver)
+  where
+    hGetContentsEager :: Builder -> Handle -> IO Builder
+    hGetContentsEager acc h = do
+      chunk <- LBS.hGet h 1024
+      let acc' = acc <> lazyByteString chunk
+      if chunk == mempty
+        then return acc'
+        else hGetContentsEager acc' h

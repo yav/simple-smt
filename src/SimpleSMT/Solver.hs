@@ -43,13 +43,11 @@ import Prelude hiding (not, and, or, abs, div, mod, concat, const, log)
 import qualified Control.Exception as X
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.ByteString.Builder (Builder)
-import Data.IORef (IORef, newIORef, readIORef, writeIORef, atomicModifyIORef)
+import Data.IORef (IORef, newIORef, atomicModifyIORef)
 
 data Backend = Backend {
-  send :: LBS.ByteString -> IO ()
+  send :: LBS.ByteString -> IO LBS.ByteString
   -- ^ Send a command to the backend.
-  , response :: IORef LBS.ByteString
-  -- ^ A buffer holding the solver's responses to the commands.
   }
 
 type Queue = IORef Builder
@@ -76,27 +74,18 @@ data Solver = Solver
   -- ^ The function used for logging the solver's activity.
   }
 
--- | Send a command to the solver.
-sendSolver :: Solver -> LBS.ByteString -> IO ()
+sendSolver :: Solver -> LBS.ByteString -> IO SExpr
 sendSolver solver cmd = do
   log solver $ "[send] " <> cmd
-  send (backend solver) cmd
-
--- | Read a single s-expression outputted by the solver.
-recvSolver :: Solver -> IO SExpr
-recvSolver solver = do
-  let solverResponse = response $ backend solver
-  resp <- readIORef solverResponse
-  (expr, next) <-
-    case parseSExpr resp of
-      Nothing -> do
-        log solver $ "[error] failed to parse solver output:\n" <> resp
-        fail $
-          unlines ["Unexpected response from the SMT solver:", "parsing failed"]
-      Just res -> return res
-  writeIORef solverResponse next
-  log solver $ "[recv] " <> (serializeSingle $ renderSExpr expr)
-  return expr
+  resp <- send (backend solver) cmd
+  case parseSExpr resp of
+    Nothing -> do
+      log solver $ "[error] failed to parse solver output:\n" <> resp
+      fail $
+        unlines ["Unexpected response from the SMT solver:", "parsing failed"]
+    Just (expr, _) -> do
+      log solver $ "[recv] " <> (serializeSingle $ renderSExpr expr)
+      return expr
 
 -- | Create a new solver and initialize it with some options so that it behaves
 -- correctly for our use.
@@ -137,7 +126,6 @@ command solver expr = do
     case queue solver of
       Nothing -> return $ serializeSingle cmd
       Just q -> serializeBatch <$> (<> renderSExpr expr) <$> flushQueue q
-  recvSolver solver
 
 -- | Load the contents of a file.
 loadFile :: Solver -> FilePath -> IO ()
@@ -153,7 +141,7 @@ ackCommand solver expr =
   case queue solver of
     Nothing -> do
       let cmd = serializeSingle $ renderSExpr expr
-      res <- sendSolver solver cmd >> recvSolver solver
+      res <- sendSolver solver cmd
       case res of
         Atom "success" -> return ()
         _  -> fail $ unlines [
