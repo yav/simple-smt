@@ -13,6 +13,12 @@ module SimpleSMT.Solver.Z3
 
 import qualified SimpleSMT.Solver as Solver
 
+import Data.ByteString.Builder.Extra
+  ( defaultChunkSize
+  , smallChunkSize
+  , toLazyByteStringWith
+  , untrimmedStrategy
+  )
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import qualified Data.Map as M
@@ -74,12 +80,14 @@ toBackend :: Z3 -> Solver.Backend
 toBackend z3 =
   Solver.Backend $ \cmd -> do
     let ctx = context z3
-    -- Z3 requires null-terminated cstrings
-    -- appending the null character performs a memcpy so is inefficient
-    -- TODO a better solution would be to do this on the bytestring-build before it
-    -- is evaluated to a lazy bytestring
-    let cmd' = LBS.toStrict $ cmd `LBS.snoc` '\NUL'
-    LBS.fromStrict <$> (BS.packCString =<<
-      [CU.exp| const char* {
+    let cmd' =
+          LBS.toStrict $
+          toLazyByteStringWith
+            (untrimmedStrategy smallChunkSize defaultChunkSize)
+            "\NUL"
+            cmd
+    LBS.fromStrict <$>
+      (BS.packCString =<<
+       [CU.exp| const char* {
                Z3_eval_smtlib2_string($fptr-ptr:(Z3_context ctx), $bs-ptr:cmd')
                }|])
