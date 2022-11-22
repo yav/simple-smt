@@ -41,12 +41,12 @@ module SimpleSMT.Solver
 import SimpleSMT.SExpr
 import Prelude hiding (not, and, or, abs, div, mod, concat, const, log)
 import qualified Control.Exception as X
+import Data.ByteString.Builder (Builder, toLazyByteString, lazyByteString)
 import qualified Data.ByteString.Lazy.Char8 as LBS
-import Data.ByteString.Builder (Builder)
 import Data.IORef (IORef, newIORef, readIORef, writeIORef, atomicModifyIORef)
 
 data Backend = Backend {
-  send :: LBS.ByteString -> IO ()
+  send :: Builder -> IO ()
   -- ^ Send a command to the backend.
   , response :: IORef LBS.ByteString
   -- ^ A buffer holding the solver's responses to the commands.
@@ -77,9 +77,9 @@ data Solver = Solver
   }
 
 -- | Send a command to the solver.
-sendSolver :: Solver -> LBS.ByteString -> IO ()
+sendSolver :: Solver -> Builder -> IO ()
 sendSolver solver cmd = do
-  log solver $ "[send] " <> cmd
+  log solver $ "[send] " <> toLazyByteString cmd
   send (backend solver) cmd
 
 -- | Read a single s-expression outputted by the solver.
@@ -95,7 +95,7 @@ recvSolver solver = do
           unlines ["Unexpected response from the SMT solver:", "parsing failed"]
       Just res -> return res
   writeIORef solverResponse next
-  log solver $ "[recv] " <> (serializeSingle $ renderSExpr expr)
+  log solver $ "[recv] " <> toLazyByteString (renderSExpr expr)
   return expr
 
 -- | Create a new solver and initialize it with some options so that it behaves
@@ -135,13 +135,14 @@ command solver expr = do
   let cmd = renderSExpr expr
   sendSolver solver =<<
     case queue solver of
-      Nothing -> return $ serializeSingle cmd
-      Just q -> serializeBatch <$> (<> renderSExpr expr) <$> flushQueue q
+      Nothing -> return $ cmd
+      Just q -> (<> renderSExpr expr) <$> flushQueue q
   recvSolver solver
 
 -- | Load the contents of a file.
 loadFile :: Solver -> FilePath -> IO ()
-loadFile solver file = LBS.readFile file >>= sendSolver solver >> return ()
+loadFile solver file =
+  lazyByteString <$> LBS.readFile file >>= sendSolver solver >> return ()
 
 -- | A command with no interesting result.
 -- In eager mode, the result is checked for correctness.
@@ -152,8 +153,8 @@ ackCommand :: Solver -> SExpr -> IO ()
 ackCommand solver expr =
   case queue solver of
     Nothing -> do
-      let cmd = serializeSingle $ renderSExpr expr
-      res <- sendSolver solver cmd >> recvSolver solver
+      sendSolver solver $ renderSExpr expr
+      res <- recvSolver solver
       case res of
         Atom "success" -> return ()
         _  -> fail $ unlines [

@@ -13,6 +13,12 @@ module SimpleSMT.Solver.Z3
 
 import qualified SimpleSMT.Solver as Solver
 
+import Data.ByteString.Builder.Extra
+  ( defaultChunkSize
+  , smallChunkSize
+  , toLazyByteStringWith
+  , untrimmedStrategy
+  )
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.IORef (newIORef, modifyIORef)
@@ -81,10 +87,15 @@ toBackend z3 = do
       -- appending the null character performs a memcpy so is inefficient
       -- TODO a better solution would be to do this on the bytestring-build before it
       -- is evaluated to a lazy bytestring
-      let cmd' = LBS.toStrict $ cmd `LBS.snoc` '\NUL'
-      result <- BS.packCString =<<
-               [CU.exp| const char* {
+      let cmd' =
+            LBS.toStrict $
+            toLazyByteStringWith
+              (untrimmedStrategy smallChunkSize defaultChunkSize)
+              "\NUL"
+              cmd
+      result <-
+        BS.packCString =<<
+        [CU.exp| const char* {
                    Z3_eval_smtlib2_string($fptr-ptr:(Z3_context ctx), $bs-ptr:cmd')
                    }|]
       modifyIORef resp (<> LBS.fromStrict result)
-

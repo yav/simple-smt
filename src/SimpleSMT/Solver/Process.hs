@@ -14,6 +14,7 @@ import qualified SimpleSMT.Solver as Solver
 import Control.Monad (forever)
 import Control.Concurrent.Async (Async, async, cancel)
 import qualified Control.Exception as X
+import Data.ByteString.Builder (hPutBuilder)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.IORef (newIORef)
@@ -97,4 +98,4 @@ toBackend solver = do
   response <- (LBS.hGetContents $ getStdout $ process solver) >>= newIORef
   return $
     flip Solver.Backend response $ \cmd ->
-      flip LBS.hPutStrLn cmd $ getStdin $ process solver
+      hPutBuilder (getStdin $ process solver) cmd
