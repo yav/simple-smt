@@ -1,5 +1,8 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms   #-}
+{-# LANGUAGE ViewPatterns      #-}
 module SimpleSMT.Solver.Process
   ( SolverProcess(..)
   , new
@@ -14,9 +17,13 @@ import qualified SimpleSMT.Solver as Solver
 import Control.Monad (forever)
 import Control.Concurrent.Async (Async, async, cancel)
 import qualified Control.Exception as X
-import Data.ByteString.Builder (Builder, lazyByteString, toLazyByteString)
+import Data.ByteString.Builder (hPutBuilder)
 import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Lazy.Char8 as LBS
+import Data.List.Extra ((!?))
+import Data.Int (Int64)
+import Data.IORef (IORef, newIORef, atomicModifyIORef)
+import Data.Tuple (swap)
 import System.Exit(ExitCode)
 import System.IO (Handle, hClose)
 import qualified System.Process.Typed as P (proc)
@@ -40,6 +47,8 @@ data SolverProcess =
     -- ^ The process running the solver.
     , errorReader :: Async ()
     -- ^ A process reading the solver's error messages and logging them.
+    , response :: IORef LBS.ByteString
+    -- ^ A buffer holding the solver's response.
     }
 
 -- | Run a solver as a process.
@@ -62,7 +71,8 @@ new exe args logger = do
       (do errs <- BS.hGetLine $ getStderr solverProcess
           logger $ "[stderr] " <> errs) `X.catch` \X.SomeException {} ->
       return ()
-  return $ SolverProcess solverProcess solverErrorReader
+  solverResponse <- newIORef =<< (LBS.hGetContents $ getStdout solverProcess)
+  return $ SolverProcess solverProcess solverErrorReader solverResponse
   where
     createLoggedPipe =
       mkPipeStreamSpec $ \_ h ->
@@ -95,13 +105,29 @@ with exe args logger todo = do
 toBackend :: SolverProcess -> Solver.Backend
 toBackend solver =
   Solver.Backend $ \cmd -> do
-    LBS.hPutStrLn (getStdin $ process solver) cmd
-    toLazyByteString <$> (hGetContentsEager mempty $ getStdout $ process solver)
+    hPutBuilder (getStdin $ process solver) cmd
+    getNextOutput $ response solver
   where
-    hGetContentsEager :: Builder -> Handle -> IO Builder
-    hGetContentsEager acc h = do
-      chunk <- LBS.hGet h 1024
-      let acc' = acc <> lazyByteString chunk
-      if chunk == mempty
-        then return acc'
-        else hGetContentsEager acc' h
+    getNextOutput :: IORef LBS.ByteString -> IO LBS.ByteString
+    getNextOutput solverResponse = atomicModifyIORef solverResponse $ \buffer ->
+      let parLeftIndices = LBS.elemIndices '(' buffer in
+      let parRightIndices = LBS.elemIndices ')' buffer in
+      case findEnd 0 parLeftIndices parRightIndices of
+        -- if we can't match parenthesis, we just return the whole buffer
+        -- the parsing error will be thrown in the common interface
+        Nothing -> (mempty, buffer)
+        -- otherwise, split the buffer after the first well-parenthesized word
+        Just end -> swap $ LBS.splitAt end buffer
+
+    -- given a current depth, and list of indices of the appearances of '(' and ')'
+    -- output the index of the ')' corresponding to the end of the first
+    -- well-parenthesized word
+    findEnd :: Int -> [Int64] -> [Int64] -> Maybe Int64
+    findEnd 0 [] (_ : _) = Nothing
+    findEnd depth [] moreRight = moreRight !? (depth - 1)
+    findEnd 0 (n : _) (m : _) | n > m = Nothing
+    findEnd 1 (n : _) (m : _) | n > m = Just m
+    findEnd depth (n : moreLeft) (m : moreRight) | n > m = findEnd (depth - 1) (n : moreLeft) moreRight
+                                                 | otherwise = findEnd (depth + 1) moreLeft (m : moreRight)
+    findEnd _ _ _ = Nothing
+
