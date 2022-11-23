@@ -17,13 +17,13 @@ import qualified SimpleSMT.Solver as Solver
 import Control.Monad (forever)
 import Control.Concurrent.Async (Async, async, cancel)
 import qualified Control.Exception as X
-import Data.ByteString.Builder (hPutBuilder)
+import Data.ByteString.Builder
+  ( Builder
+  , hPutBuilder
+  , byteString
+  , toLazyByteString
+  )
 import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Lazy.Char8 as LBS
-import Data.List.Extra ((!?))
-import Data.Int (Int64)
-import Data.IORef (IORef, newIORef, atomicModifyIORef)
-import Data.Tuple (swap)
 import System.Exit(ExitCode)
 import System.IO (Handle, hClose)
 import qualified System.Process.Typed as P (proc)
@@ -47,8 +47,6 @@ data SolverProcess =
     -- ^ The process running the solver.
     , errorReader :: Async ()
     -- ^ A process reading the solver's error messages and logging them.
-    , response :: IORef LBS.ByteString
-    -- ^ A buffer holding the solver's response.
     }
 
 -- | Run a solver as a process.
@@ -71,8 +69,7 @@ new exe args logger = do
       (do errs <- BS.hGetLine $ getStderr solverProcess
           logger $ "[stderr] " <> errs) `X.catch` \X.SomeException {} ->
       return ()
-  solverResponse <- newIORef =<< (LBS.hGetContents $ getStdout solverProcess)
-  return $ SolverProcess solverProcess solverErrorReader solverResponse
+  return $ SolverProcess solverProcess solverErrorReader
   where
     createLoggedPipe =
       mkPipeStreamSpec $ \_ h ->
@@ -101,33 +98,54 @@ with exe args logger todo = do
   stop solverProcess
   return result
 
+infixr 5 :<
+pattern (:<) :: Char -> BS.ByteString -> BS.ByteString
+pattern c :< rest <- (BS.uncons -> Just (c, rest))
 -- | Make the solver process into a solver backend.
 toBackend :: SolverProcess -> Solver.Backend
 toBackend solver =
   Solver.Backend $ \cmd -> do
     hPutBuilder (getStdin $ process solver) cmd
-    getNextOutput $ response solver
+    toLazyByteString <$> scanParen 0 mempty mempty
   where
-    getNextOutput :: IORef LBS.ByteString -> IO LBS.ByteString
-    getNextOutput solverResponse = atomicModifyIORef solverResponse $ \buffer ->
-      let parLeftIndices = LBS.elemIndices '(' buffer in
-      let parRightIndices = LBS.elemIndices ')' buffer in
-      case findEnd 0 parLeftIndices parRightIndices of
-        -- if we can't match parenthesis, we just return the whole buffer
-        -- the parsing error will be thrown in the common interface
-        Nothing -> (mempty, buffer)
-        -- otherwise, split the buffer after the first well-parenthesized word
-        Just end -> swap $ LBS.splitAt end buffer
+    -- scanParen read lines from the solver's output channel until it has detected
+    -- a complete s-expression, i.e. a well-parenthesized word that may contain
+    -- strings, quoted symbols, and comments
+    -- if we detect a ')' at depth 0 that is not enclosed in a string, a quoted
+    -- symbol or a comment, we give up and return immediately
+    -- see also the SMT-LIB standard v2.6
+    -- https://smtlib.cs.uiowa.edu/papers/smt-lib-reference-v2.6-r2021-05-12.pdf#part.2
+    scanParen :: Int -> Builder -> BS.ByteString -> IO Builder
+    scanParen depth acc ('(' :< more) = scanParen (depth + 1) acc more
+    scanParen depth acc ('"' :< more) = do
+      (acc', more') <- string acc more
+      scanParen depth acc' more'
+    scanParen depth acc ('|' :< more) = do
+      (acc', more') <- quotedSymbol acc more
+      scanParen depth acc' more'
+    scanParen depth acc (';' :< _) = continueNextLine (scanParen depth) acc
+    scanParen depth acc (')' :< more)
+      | depth <= 1 = return acc
+      | otherwise = scanParen (depth - 1) acc more
+    scanParen depth acc (_ :< more) = scanParen depth acc more
+    -- mempty case
+    scanParen 0 acc _ = return acc
+    scanParen depth acc _ = continueNextLine (scanParen depth) acc
 
-    -- given a current depth, and list of indices of the appearances of '(' and ')'
-    -- output the index of the ')' corresponding to the end of the first
-    -- well-parenthesized word
-    findEnd :: Int -> [Int64] -> [Int64] -> Maybe Int64
-    findEnd 0 [] (_ : _) = Nothing
-    findEnd depth [] moreRight = moreRight !? (depth - 1)
-    findEnd 0 (n : _) (m : _) | n > m = Nothing
-    findEnd 1 (n : _) (m : _) | n > m = Just m
-    findEnd depth (n : moreLeft) (m : moreRight) | n > m = findEnd (depth - 1) (n : moreLeft) moreRight
-                                                 | otherwise = findEnd (depth + 1) moreLeft (m : moreRight)
-    findEnd _ _ _ = Nothing
+    string :: Builder -> BS.ByteString -> IO (Builder, BS.ByteString)
+    string acc ('"' :< '"' :< more) = string acc more
+    string acc ('"' :< more) = return (acc, more)
+    string acc (_ :< more) = string acc more
+    -- mempty case
+    string acc _ = continueNextLine string acc
 
+    quotedSymbol :: Builder -> BS.ByteString -> IO (Builder, BS.ByteString)
+    quotedSymbol acc ('|' :< more) = return (acc, more)
+    quotedSymbol acc (_ :< more) = string acc more
+    -- mempty case
+    quotedSymbol acc _ = continueNextLine quotedSymbol acc
+
+    continueNextLine :: (Builder -> BS.ByteString -> IO a) -> Builder -> IO a
+    continueNextLine f acc = do
+      next <- BS.hGetLine $ getStdout $ process solver
+      f (acc <> byteString next) next
