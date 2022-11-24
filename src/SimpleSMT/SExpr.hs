@@ -102,7 +102,13 @@ import Prelude hiding (not, and, or, abs, div, mod, concat, const)
 import qualified Prelude as P
 import Data.Char(isSpace, isDigit)
 import Data.Bits(testBit)
-import Data.ByteString.Builder (Builder, stringUtf8)
+import Data.ByteString.Builder
+  ( Builder
+  , charUtf8
+  , lazyByteString
+  , stringUtf8
+  , toLazyByteString
+  )
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.List (intersperse)
 import Text.Read(readMaybe)
@@ -256,26 +262,41 @@ parseSExpr :: LBS.ByteString -> Maybe (SExpr, LBS.ByteString)
 parseSExpr (c :< more) | isSpace c = parseSExpr more
 parseSExpr (';' :< more) = parseSExpr $ LBS.drop 1 $ LBS.dropWhile (/= '\n') more
 parseSExpr ('|' :< more) = do
-  let (sym, '|' :< rest) = LBS.break (== '|') more
-  Just (Atom $ LBS.unpack $ LBS.cons '|' $ LBS.snoc sym '|', rest)
+  (quotedSymbol, '|' :< rest) <- return $ LBS.break (== '|') more
+  Just (Atom $ "|" ++ LBS.unpack quotedSymbol ++ "|", rest)
+parseSExpr ('"' :< more) = do
+  (stringLiteral, rest) <- string more
+  Just
+    (Atom $ "\"" ++ LBS.unpack (toLazyByteString stringLiteral) ++ "\"", rest)
+  where
+    string :: LBS.ByteString -> Maybe (Builder, LBS.ByteString)
+    string more' = do
+      (part, '"' :< rest) <- return $ LBS.break (== '"') more'
+      let partBuilder = lazyByteString part
+      case rest of
+        ('"' :< more'') -> do
+          (part', rest') <- string more''
+          return (partBuilder <> charUtf8 '"' <> part', rest')
+        _ -> return (partBuilder, rest)
 parseSExpr ('(' :< more) = do
-  (es, rest) <- list more
-  return (List es, rest)
+  (exprs, rest) <- list more
+  return (List exprs, rest)
   where
     list :: LBS.ByteString -> Maybe ([SExpr], LBS.ByteString)
     list (c :< more') | isSpace c = list more'
     list (')' :< more') = return ([], more')
     list more' = do
-      (e, rest) <- parseSExpr more'
-      (es, rest') <- list rest
-      return (e : es, rest')
+      (expr, rest) <- parseSExpr more'
+      (exprs, rest') <- list rest
+      return (expr : exprs, rest')
+parseSExpr (':' :< more) =
+  let (simpleSymbol, rest) = LBS.span allowedSimpleChar more
+   in Just (Atom $ ":" ++ LBS.unpack simpleSymbol, rest)
 parseSExpr txt =
-  case LBS.break end txt of
+  case LBS.span allowedSimpleChar txt of
     (atom, rest)
       | P.not (LBS.null atom) -> Just (Atom $ LBS.unpack atom, rest)
     _ -> Nothing
-  where
-    end x = x == ')' || isSpace x
 
 -- | A constant, corresponding to a family indexed by some integers.
 fam :: String -> [Integer] -> SExpr
