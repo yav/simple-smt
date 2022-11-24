@@ -13,6 +13,7 @@ module SimpleSMT.Solver.Z3
 
 import qualified SimpleSMT.Solver as Solver
 
+import Control.Exception (bracket)
 import Data.ByteString.Builder.Extra
   ( defaultChunkSize
   , smallChunkSize
@@ -70,11 +71,7 @@ free = finalizeForeignPtr . context
 
 -- | Create a Z3 instance, use it to run a computation and release its resources.
 with :: (Z3 -> IO a) -> IO a
-with todo = do
-  z3 <- new
-  result <- todo z3
-  free z3
-  return result
+with = bracket new free
 
 -- | Create a solver backend out of a Z3 instance.
 toBackend :: Z3 -> IO Solver.Backend
