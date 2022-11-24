@@ -1,9 +1,10 @@
 {-# LANGUAGE QuasiQuotes #-}
 module Sources (Source(..), sources) where
 
+import SimpleSMT.SExpr (SExpr(..))
 import           Text.RawString.QQ
 
-data Source = Source { name :: String, content :: String, parsed :: [String] }
+data Source = Source { name :: String, content :: String, parsed :: [SExpr] }
 
 -- | A list of examples SMT-Lib2 files. Most of them were taken from the official
 -- SMT-Lib website:
@@ -51,20 +52,20 @@ assertions = [r|
 (exit)|]
 
 assertionsParsed =
-  [ "(set-option :produce-assertions true)"
-  , "(set-logic QF_UF)"
-  , "(declare-const p Bool)"
-  , "(declare-const q Bool)"
-  , "(push 1)"
-  , "(assert (or p q))"
-  , "(push 1)"
-  , "(assert (not q))"
-  , "(get-assertions)"
-  , "(pop 1)"
-  , "(get-assertions)"
-  , "(pop 1)"
-  , "(get-assertions)"
-  , "(exit)"
+  [ List [Atom "set-option", Atom ":produce-assertions", Atom "true"]
+  , List [Atom "set-logic", Atom "QF_UF"]
+  , List [Atom "declare-const", Atom "p", Atom "Bool"]
+  , List [Atom "declare-const", Atom "q", Atom "Bool"]
+  , List [Atom "push", Atom "1"]
+  , List [Atom "assert", List [Atom "or", Atom "p", Atom "q"]]
+  , List [Atom "push", Atom "1"]
+  , List [Atom "assert", List [Atom "not", Atom "q"]]
+  , List [Atom "get-assertions"]
+  , List [Atom "pop", Atom "1"]
+  , List [Atom "get-assertions"]
+  , List [Atom "pop", Atom "1"]
+  , List [Atom "get-assertions"]
+  , List [Atom "exit"]
   ]
 
 assignments = [r|
@@ -79,15 +80,34 @@ assignments = [r|
 ; ((P true) (R false) (PQ true))
 (exit)|]
 assignmentsParsed =
-  [ "(set-option :produce-assignments true)"
-  , "(set-logic QF_UF)"
-  , "(declare-const p Bool)"
-  , "(declare-const q Bool)"
-  , "(declare-const r Bool)"
-  , "(assert (not (=(! (and (! p :named P) q) :named PQ) (! r :named R))))"
-  , "(check-sat)"
-  , "(get-assignment)"
-  , "(exit)"
+  [ List [Atom "set-option", Atom ":produce-assignments", Atom "true"]
+  , List [Atom "set-logic", Atom "QF_UF"]
+  , List [Atom "declare-const", Atom "p", Atom "Bool"]
+  , List [Atom "declare-const", Atom "q", Atom "Bool"]
+  , List [Atom "declare-const", Atom "r", Atom "Bool"]
+  , List
+      [ Atom "assert"
+      , List
+          [ Atom "not"
+          , List
+              [ Atom "="
+              , List
+                  [ Atom "!"
+                  , List
+                      [ Atom "and"
+                      , List [Atom "!", Atom "p", Atom ":named", Atom "P"]
+                      , Atom "q"
+                      ]
+                  , Atom ":named"
+                  , Atom "PQ"
+                  ]
+              , List [Atom "!", Atom "r", Atom ":named", Atom "R"]
+              ]
+          ]
+      ]
+  , List [Atom "check-sat"]
+  , List [Atom "get-assignment"]
+  , List [Atom "exit"]
   ]
 
 boolean = [r|
@@ -99,12 +119,13 @@ boolean = [r|
 (check-sat) ; returns 'unsat'
 (exit)|]
 booleanParsed =
-  [ "(set-option :print-success false)"
-  , "(set-logic QF_UF)"
-  , "(declare-const p Bool)"
-  , "(assert (and p (not p)))"
-  , "(check-sat)"
-  , "(exit)"
+  [ List [Atom "set-option", Atom ":print-success", Atom "false"]
+  , List [Atom "set-logic", Atom "QF_UF"]
+  , List [Atom "declare-const", Atom "p", Atom "Bool"]
+  , List
+      [Atom "assert", List [Atom "and", Atom "p", List [Atom "not", Atom "p"]]]
+  , List [Atom "check-sat"]
+  , List [Atom "exit"]
   ]
 
 info = [r|
@@ -117,7 +138,11 @@ info = [r|
 ; (:authors "The CVC4 Team" )
 (exit)|]
 infoParsed =
-  ["(get-info :name)", "(get-info :version)", "(get-info :authors)", "(exit)"]
+  [ List [Atom "get-info", Atom ":name"]
+  , List [Atom "get-info", Atom ":version"]
+  , List [Atom "get-info", Atom ":authors"]
+  , List [Atom "exit"]
+  ]
 
 integerArithmetic = [r|
 ; Integer arithmetic
@@ -129,12 +154,20 @@ integerArithmetic = [r|
 ; unsat
 (exit)|]
 integerArithmeticParsed =
-  [ "(set-logic QF_LIA)"
-  , "(declare-const x Int)"
-  , "(declare-const y Int)"
-  , "(assert (= (- x y) (+ x (- y) 1)))"
-  , "(check-sat)"
-  , "(exit)" ]
+  [ List [Atom "set-logic", Atom "QF_LIA"]
+  , List [Atom "declare-const", Atom "x", Atom "Int"]
+  , List [Atom "declare-const", Atom "y", Atom "Int"]
+  , List
+      [ Atom "assert"
+      , List
+          [ Atom "="
+          , List [Atom "-", Atom "x", Atom "y"]
+          , List [Atom "+", Atom "x", List [Atom "-", Atom "y"], Atom "1"]
+          ]
+      ]
+  , List [Atom "check-sat"]
+  , List [Atom "exit"]
+  ]
 
 modelingSequentialCodeSSA = [r|
 ; Modeling sequential code in SSA form
@@ -168,19 +201,54 @@ modelingSequentialCodeSSA = [r|
 ; )
 (exit)|]
 modelingSequentialCodeSSAParsed =
-  [ "(set-logic QF_UFLIA)"
-  , "(set-option :produce-models true)"
-  , "(declare-fun x (Int) Int)"
-  , "(declare-fun y (Int) Int)"
-  , "(declare-fun t (Int) Int)"
-  , "(assert (= (t 0) (x 0)))"
-  , "(assert (= (y 1) (t 0)))"
-  , "(assert (= (x 1) (y 1)))"
-  , "(assert (not (and (= (x 1) (y 0)) (= (y 1) (x 0)))))"
-  , "(check-sat)"
-  , "(get-value ((x 0) (y 0) (x 1) (y 1)))"
-  , "(get-model)"
-  , "(exit)"
+  [ List [Atom "set-logic", Atom "QF_UFLIA"]
+  , List [Atom "set-option", Atom ":produce-models", Atom "true"]
+  , List [Atom "declare-fun", Atom "x", List [Atom "Int"], Atom "Int"]
+  , List [Atom "declare-fun", Atom "y", List [Atom "Int"], Atom "Int"]
+  , List [Atom "declare-fun", Atom "t", List [Atom "Int"], Atom "Int"]
+  , List
+      [ Atom "assert"
+      , List [Atom "=", List [Atom "t", Atom "0"], List [Atom "x", Atom "0"]]
+      ]
+  , List
+      [ Atom "assert"
+      , List [Atom "=", List [Atom "y", Atom "1"], List [Atom "t", Atom "0"]]
+      ]
+  , List
+      [ Atom "assert"
+      , List [Atom "=", List [Atom "x", Atom "1"], List [Atom "y", Atom "1"]]
+      ]
+  , List
+      [ Atom "assert"
+      , List
+          [ Atom "not"
+          , List
+              [ Atom "and"
+              , List
+                  [ Atom "="
+                  , List [Atom "x", Atom "1"]
+                  , List [Atom "y", Atom "0"]
+                  ]
+              , List
+                  [ Atom "="
+                  , List [Atom "y", Atom "1"]
+                  , List [Atom "x", Atom "0"]
+                  ]
+              ]
+          ]
+      ]
+  , List [Atom "check-sat"]
+  , List
+      [ Atom "get-value"
+      , List
+          [ List [Atom "x", Atom "0"]
+          , List [Atom "y", Atom "0"]
+          , List [Atom "x", Atom "1"]
+          , List [Atom "y", Atom "1"]
+          ]
+      ]
+  , List [Atom "get-model"]
+  , List [Atom "exit"]
   ]
 
 modelingSequentialCodeBitvectors = [r|
@@ -215,19 +283,54 @@ modelingSequentialCodeBitvectors = [r|
 ; )
 (exit)|]
 modelingSequentialCodeBitvectorsParsed =
-  [ "(set-logic QF_UFLIA)"
-  , "(set-option :produce-models true)"
-  , "(declare-fun x (Int) Int)"
-  , "(declare-fun y (Int) Int)"
-  , "(declare-fun t (Int) Int)"
-  , "(assert (= (t 0) (x 0)))"
-  , "(assert (= (y 1) (t 0)))"
-  , "(assert (= (x 1) (y 1)))"
-  , "(assert (not (and (= (x 1) (y 0)) (= (y 1) (x 0)))))"
-  , "(check-sat)"
-  , "(get-value ((x 0) (y 0) (x 1) (y 1)))"
-  , "(get-model)"
-  , "(exit)"
+  [ List [Atom "set-logic", Atom "QF_UFLIA"]
+  , List [Atom "set-option", Atom ":produce-models", Atom "true"]
+  , List [Atom "declare-fun", Atom "x", List [Atom "Int"], Atom "Int"]
+  , List [Atom "declare-fun", Atom "y", List [Atom "Int"], Atom "Int"]
+  , List [Atom "declare-fun", Atom "t", List [Atom "Int"], Atom "Int"]
+  , List
+      [ Atom "assert"
+      , List [Atom "=", List [Atom "t", Atom "0"], List [Atom "x", Atom "0"]]
+      ]
+  , List
+      [ Atom "assert"
+      , List [Atom "=", List [Atom "y", Atom "1"], List [Atom "t", Atom "0"]]
+      ]
+  , List
+      [ Atom "assert"
+      , List [Atom "=", List [Atom "x", Atom "1"], List [Atom "y", Atom "1"]]
+      ]
+  , List
+      [ Atom "assert"
+      , List
+          [ Atom "not"
+          , List
+              [ Atom "and"
+              , List
+                  [ Atom "="
+                  , List [Atom "x", Atom "1"]
+                  , List [Atom "y", Atom "0"]
+                  ]
+              , List
+                  [ Atom "="
+                  , List [Atom "y", Atom "1"]
+                  , List [Atom "x", Atom "0"]
+                  ]
+              ]
+          ]
+      ]
+  , List [Atom "check-sat"]
+  , List
+      [ Atom "get-value"
+      , List
+          [ List [Atom "x", Atom "0"]
+          , List [Atom "y", Atom "0"]
+          , List [Atom "x", Atom "1"]
+          , List [Atom "y", Atom "1"]
+          ]
+      ]
+  , List [Atom "get-model"]
+  , List [Atom "exit"]
   ]
 
 scopes = [r|
@@ -248,20 +351,33 @@ scopes = [r|
 (pop 1)
 (exit)|]
 scopesParsed =
-  [ "(set-option :print-success false)"
-  , "(set-logic QF_LIA)"
-  , "(declare-const x Int)"
-  , "(declare-const y Int)"
-  , "(assert (= (+ x (* 2 y)) 20))"
-  , "(push 1)"
-  , "(assert (= (- x y) 2))"
-  , "(check-sat)"
-  , "(pop 1)"
-  , "(push 1)"
-  , "(assert (= (- x y) 3))"
-  , "(check-sat)"
-  , "(pop 1)"
-  , "(exit)"
+  [ List [Atom "set-option", Atom ":print-success", Atom "false"]
+  , List [Atom "set-logic", Atom "QF_LIA"]
+  , List [Atom "declare-const", Atom "x", Atom "Int"]
+  , List [Atom "declare-const", Atom "y", Atom "Int"]
+  , List
+      [ Atom "assert"
+      , List
+          [ Atom "="
+          , List [Atom "+", Atom "x", List [Atom "*", Atom "2", Atom "y"]]
+          , Atom "20"
+          ]
+      ]
+  , List [Atom "push", Atom "1"]
+  , List
+      [ Atom "assert"
+      , List [Atom "=", List [Atom "-", Atom "x", Atom "y"], Atom "2"]
+      ]
+  , List [Atom "check-sat"]
+  , List [Atom "pop", Atom "1"]
+  , List [Atom "push", Atom "1"]
+  , List
+      [ Atom "assert"
+      , List [Atom "=", List [Atom "-", Atom "x", Atom "y"], Atom "3"]
+      ]
+  , List [Atom "check-sat"]
+  , List [Atom "pop", Atom "1"]
+  , List [Atom "exit"]
   ]
 
 sorts = [r|
@@ -286,26 +402,47 @@ sorts = [r|
 (pop 1)
 (exit)|]
 sortsParsed =
-  [ "(set-option :print-success false)"
-  , "(set-logic QF_UF)"
-  , "(declare-sort A 0)"
-  , "(declare-const a A)"
-  , "(declare-const b A)"
-  , "(declare-const c A)"
-  , "(declare-const d A)"
-  , "(declare-const e A)"
-  , "(assert (or (= c a) (= c b)))"
-  , "(assert (or (= d a) (= d b)))"
-  , "(assert (or (= e a) (= e b)))"
-  , "(push 1)"
-  , "(assert (distinct c d))"
-  , "(check-sat)"
-  , "(pop 1)"
-  , "(push 1)"
-  , "(assert (distinct c d e))"
-  , "(check-sat)"
-  , "(pop 1)"
-  , "(exit)"
+  [ List [Atom "set-option", Atom ":print-success", Atom "false"]
+  , List [Atom "set-logic", Atom "QF_UF"]
+  , List [Atom "declare-sort", Atom "A", Atom "0"]
+  , List [Atom "declare-const", Atom "a", Atom "A"]
+  , List [Atom "declare-const", Atom "b", Atom "A"]
+  , List [Atom "declare-const", Atom "c", Atom "A"]
+  , List [Atom "declare-const", Atom "d", Atom "A"]
+  , List [Atom "declare-const", Atom "e", Atom "A"]
+  , List
+      [ Atom "assert"
+      , List
+          [ Atom "or"
+          , List [Atom "=", Atom "c", Atom "a"]
+          , List [Atom "=", Atom "c", Atom "b"]
+          ]
+      ]
+  , List
+      [ Atom "assert"
+      , List
+          [ Atom "or"
+          , List [Atom "=", Atom "d", Atom "a"]
+          , List [Atom "=", Atom "d", Atom "b"]
+          ]
+      ]
+  , List
+      [ Atom "assert"
+      , List
+          [ Atom "or"
+          , List [Atom "=", Atom "e", Atom "a"]
+          , List [Atom "=", Atom "e", Atom "b"]
+          ]
+      ]
+  , List [Atom "push", Atom "1"]
+  , List [Atom "assert", List [Atom "distinct", Atom "c", Atom "d"]]
+  , List [Atom "check-sat"]
+  , List [Atom "pop", Atom "1"]
+  , List [Atom "push", Atom "1"]
+  , List [Atom "assert", List [Atom "distinct", Atom "c", Atom "d", Atom "e"]]
+  , List [Atom "check-sat"]
+  , List [Atom "pop", Atom "1"]
+  , List [Atom "exit"]
   ]
 
 unsatCores = [r|
@@ -325,21 +462,61 @@ unsatCores = [r|
 ; (QR RS NQS)
 (exit)|]
 unsatCoresParsed =
-  [ "(set-option :produce-unsat-cores true)"
-  , "(set-logic QF_UF)"
-  , "(declare-const p Bool)"
-  , "(declare-const q Bool)"
-  , "(declare-const r Bool)"
-  , "(declare-const s Bool)"
-  , "(declare-const t Bool)"
-  , "(assert (! (=> p q) :named PQ))"
-  , "(assert (! (=> q r) :named QR))"
-  , "(assert (! (=> r s) :named RS))"
-  , "(assert (! (=> s t) :named ST))"
-  , "(assert (! (not (=> q s)) :named NQS))"
-  , "(check-sat)"
-  , "(get-unsat-core)"
-  , "(exit)"
+  [ List [Atom "set-option", Atom ":produce-unsat-cores", Atom "true"]
+  , List [Atom "set-logic", Atom "QF_UF"]
+  , List [Atom "declare-const", Atom "p", Atom "Bool"]
+  , List [Atom "declare-const", Atom "q", Atom "Bool"]
+  , List [Atom "declare-const", Atom "r", Atom "Bool"]
+  , List [Atom "declare-const", Atom "s", Atom "Bool"]
+  , List [Atom "declare-const", Atom "t", Atom "Bool"]
+  , List
+      [ Atom "assert"
+      , List
+          [ Atom "!"
+          , List [Atom "=>", Atom "p", Atom "q"]
+          , Atom ":named"
+          , Atom "PQ"
+          ]
+      ]
+  , List
+      [ Atom "assert"
+      , List
+          [ Atom "!"
+          , List [Atom "=>", Atom "q", Atom "r"]
+          , Atom ":named"
+          , Atom "QR"
+          ]
+      ]
+  , List
+      [ Atom "assert"
+      , List
+          [ Atom "!"
+          , List [Atom "=>", Atom "r", Atom "s"]
+          , Atom ":named"
+          , Atom "RS"
+          ]
+      ]
+  , List
+      [ Atom "assert"
+      , List
+          [ Atom "!"
+          , List [Atom "=>", Atom "s", Atom "t"]
+          , Atom ":named"
+          , Atom "ST"
+          ]
+      ]
+  , List
+      [ Atom "assert"
+      , List
+          [ Atom "!"
+          , List [Atom "not", List [Atom "=>", Atom "q", Atom "s"]]
+          , Atom ":named"
+          , Atom "NQS"
+          ]
+      ]
+  , List [Atom "check-sat"]
+  , List [Atom "get-unsat-core"]
+  , List [Atom "exit"]
   ]
 
 valuesOrModels = [r|
@@ -361,18 +538,28 @@ valuesOrModels = [r|
 ; )
 (exit)|]
 valuesOrModelsParsed =
-  [ "(set-option :print-success false)"
-  , "(set-option :produce-models true)"
-  , "(set-logic QF_LIA)"
-  , "(declare-const x Int)"
-  , "(declare-const y Int)"
-  , "(assert (= (+ x (* 2 y)) 20))"
-  , "(assert (= (- x y) 2))"
-  , "(check-sat)"
-  , "(get-value (x y))"
-  , "(get-model)"
-  , "(exit)"
+  [ List [Atom "set-option", Atom ":print-success", Atom "false"]
+  , List [Atom "set-option", Atom ":produce-models", Atom "true"]
+  , List [Atom "set-logic", Atom "QF_LIA"]
+  , List [Atom "declare-const", Atom "x", Atom "Int"]
+  , List [Atom "declare-const", Atom "y", Atom "Int"]
+  , List
+      [ Atom "assert"
+      , List
+          [ Atom "="
+          , List [Atom "+", Atom "x", List [Atom "*", Atom "2", Atom "y"]]
+          , Atom "20"
+          ]
+      ]
+  , List
+      [ Atom "assert"
+      , List [Atom "=", List [Atom "-", Atom "x", Atom "y"], Atom "2"]
+      ]
+  , List [Atom "check-sat"]
+  , List [Atom "get-value", List [Atom "x", Atom "y"]]
+  , List [Atom "get-model"]
+  , List [Atom "exit"]
   ]
 
 z3error = "(error \"line 1 column 33: invalid command, '(' expected\")"
-z3errorParsed = [ z3error ]
+z3errorParsed = [ List [ Atom "error", Atom "\"line 1 column 33: invalid command, '(' expected\""]]

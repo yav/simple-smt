@@ -16,19 +16,17 @@ tests :: TestTree
 tests =
   testGroup
     "SExpr"
-    [ testGroup "Parsing and printing" $ do
+    [ testGroup "Parsing" $ do
         source <- Src.sources
         return $
           testCase (Src.name source) $ do
             let expecteds = Src.parsed source
-                gots =
-                  fmap (flip SExpr.showsSExpr "") $
-                  unfoldr SExpr.readSExpr $ Src.content source
+                gots = unfoldr SExpr.readSExpr $ Src.content source
             zipWithM_
               (\expected got ->
                  assertBool
                    ("  parsed:   '" ++
-                    got ++ "'\n  expected: '" ++ expected ++ "'") $
+                    show got ++ "\n  expected: '" ++ show expected) $
                  expected == got)
               expecteds
               gots
