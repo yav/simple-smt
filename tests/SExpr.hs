@@ -16,24 +16,30 @@ tests :: TestTree
 tests =
   testGroup
     "SExpr"
-    [ testGroup "Parsing" $ do
-        source <- Src.sources
-        return $
-          testCase (Src.name source) $ do
-            let expecteds = Src.parsed source
-                gots = unfoldr SExpr.readSExpr $ Src.content source
-            zipWithM_
-              (\expected got ->
-                 assertBool
-                   ("  parsed:   '" ++
-                    show got ++ "\n  expected: '" ++ show expected) $
-                 expected == got)
-              expecteds
-              gots
-            let numExpected = length expecteds
-                numGot = length gots
-            assertBool
-              ("parsed " ++
-               show numGot ++ " expressions but expected " ++ show numExpected) $
-              numExpected == numGot
+    [ testGroup
+        "Parsing"
+        [ testParser "from Strings" $ unfoldr SExpr.readSExpr
+        , testParser "from ByteStrings" $ unfoldr SExpr.parseSExpr . LBS.pack
+        ]
     ]
+
+testParser :: String -> (String -> [SExpr.SExpr]) -> TestTree
+testParser name parse = testGroup name $ do
+  source <- Src.sources
+  return $
+    testCase (Src.name source) $ do
+      let expecteds = Src.parsed source
+          gots = parse $ Src.content source
+      zipWithM_
+        (\expected got ->
+           assertBool
+             ("  parsed:   '" ++ show got ++ "\n  expected: '" ++ show expected) $
+           expected == got)
+        expecteds
+        gots
+      let numExpected = length expecteds
+          numGot = length gots
+      assertBool
+        ("parsed " ++
+         show numGot ++ " expressions but expected " ++ show numExpected) $
+        numExpected == numGot
