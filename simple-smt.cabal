@@ -31,7 +31,7 @@ test-suite test
   hs-source-dirs:      tests
   main-is: Main.hs
   other-modules: SExpr Sources
-  ghc-options: -threaded
+  ghc-options:         -threaded -Wall -Werror
   build-depends:       base >= 4.15,
                        bytestring >= 0.10,
                        directory >= 1.3,

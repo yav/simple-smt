@@ -1,4 +1,5 @@
 {-# LANGUAGE QuasiQuotes #-}
+{-# OPTIONS_GHC -Wno-missing-signatures #-}
 module Sources (Source(..), sources) where
 
 import SimpleSMT.SExpr (SExpr(..))

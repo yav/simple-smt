@@ -7,8 +7,6 @@ import qualified Sources as Src
 import Control.Monad (zipWithM_)
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.List (unfoldr)
-import Data.List.Extra (trim)
-import Data.Maybe (isJust)
 import Test.Tasty
 import Test.Tasty.HUnit
   
