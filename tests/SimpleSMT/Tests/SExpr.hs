@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
-module SExpr (tests) where
+module SimpleSMT.Tests.SExpr (tests) where
 
 import qualified SimpleSMT.SExpr as SExpr
-import qualified Sources as Src
+import qualified SimpleSMT.Tests.Sources as Src
   
 import Control.Monad (zipWithM_)
 import qualified Data.ByteString.Lazy.Char8 as LBS

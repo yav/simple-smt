@@ -30,7 +30,8 @@ test-suite test
   type: exitcode-stdio-1.0
   hs-source-dirs:      tests
   main-is: Main.hs
-  other-modules: SExpr Sources
+  other-modules:       SimpleSMT.Tests.SExpr
+                       SimpleSMT.Tests.Sources
   ghc-options:         -threaded -Wall -Werror
   build-depends:       base >= 4.15,
                        bytestring >= 0.10,

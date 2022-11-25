@@ -1,6 +1,6 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
-module Sources (Source(..), sources) where
+module SimpleSMT.Tests.Sources (Source(..), sources) where
 
 import SimpleSMT.SExpr (SExpr(..))
 import           Text.RawString.QQ
