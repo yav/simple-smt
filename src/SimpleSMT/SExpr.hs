@@ -100,7 +100,7 @@ module SimpleSMT.SExpr
 
 import Prelude hiding (not, and, or, abs, div, mod, concat, const)
 import qualified Prelude as P
-import Data.Char(isSpace, isDigit)
+import Data.Char(isSpace, isDigit, isAlphaNum)
 import Data.Bits(testBit)
 import Data.ByteString.Builder
   ( Builder
@@ -292,6 +292,16 @@ parseSExpr ('(' :< more) = do
 parseSExpr (':' :< more) =
   let (simpleSymbol, rest) = LBS.span allowedSimpleChar more
    in Just (Atom $ ":" ++ LBS.unpack simpleSymbol, rest)
+parseSExpr ('#' :< base :< more) = do
+  isValidDigit <-
+    case base of
+      'b' -> return $ \digit -> digit == '0' || digit == '1'
+      'x' -> return isAlphaNum
+      _ -> Nothing
+  let (number, rest) = LBS.span isValidDigit more
+  if LBS.null number
+    then Nothing
+    else Just (Atom $ '#' : base : LBS.unpack number, rest)
 parseSExpr txt =
   case LBS.span allowedSimpleChar txt of
     (atom, rest)
