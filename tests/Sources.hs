@@ -585,12 +585,12 @@ with a line break in it"
 ; symbols
 + <= x plus ** $ <sas <adf>
 abc77 *$s&6 .kkk .8 +34 -32
-| this is a quoted symbol |
-| so is
-this one |
+|this is a quoted symbol|
+|so is
+this one|
 ||
-| " can occur too |
-| af klj^*0asfe2(&*)&(#^$>>>?"']]984|
+| " can occur too|
+|af klj^*0asfe2(&*)&(#^$>>>?"']]984|
 ; keywords
 :date :a2 :foo-bar
 :<= :56 :->
@@ -606,7 +606,7 @@ termsParsed =
   , Atom "#b101011"
   , Atom "\"this is a string literal\""
   , Atom "\"\""
-  , Atom "\"She said : \"\"Bye bye\"\" and left .\""
+  , Atom "\"She said : \"\"Bye bye\"\" and left.\""
   , Atom "\"this is a string literal\nwith a line break in it\""
   , Atom "+"
   , Atom "<="
@@ -615,7 +615,7 @@ termsParsed =
   , Atom "**"
   , Atom "$"
   , Atom "<sas"
-  , Atom "<adf"
+  , Atom "<adf>"
   , Atom "abc77"
   , Atom "*$s&6"
   , Atom ".kkk"
@@ -629,8 +629,8 @@ termsParsed =
   , Atom "|af klj^*0asfe2(&*)&(#^$>>>?\"']]984|"
   , Atom ":date"
   , Atom ":a2"
-  , Atom ":foo-ba"
+  , Atom ":foo-bar"
   , Atom ":<="
   , Atom ":56"
-  , Atom ":-"
+  , Atom ":->"
   ]
