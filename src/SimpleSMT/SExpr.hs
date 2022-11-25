@@ -104,7 +104,7 @@ import Data.Char(isSpace, isDigit, isAlphaNum)
 import Data.Bits(testBit)
 import Data.ByteString.Builder
   ( Builder
-  , charUtf8
+  , stringUtf8 
   , lazyByteString
   , stringUtf8
   , toLazyByteString
@@ -276,7 +276,7 @@ parseSExpr ('"' :< more) = do
       case rest of
         ('"' :< more'') -> do
           (part', rest') <- string more''
-          return (partBuilder <> charUtf8 '"' <> part', rest')
+          return (partBuilder <> stringUtf8 "\"\"" <> part', rest')
         _ -> return (partBuilder, rest)
 parseSExpr ('(' :< more) = do
   (exprs, rest) <- list more
