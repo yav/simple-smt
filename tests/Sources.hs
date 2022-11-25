@@ -29,6 +29,7 @@ sources =
   , Source "unsat cores" unsatCores unsatCoresParsed
   , Source "values or models" valuesOrModels valuesOrModelsParsed
   , Source "Z3 error message" z3error z3errorParsed
+  , Source "terms" terms termsParsed
   ]
 
 assertions = [r|
@@ -564,3 +565,72 @@ valuesOrModelsParsed =
 
 z3error = "(error \"line 1 column 33: invalid command, '(' expected\")"
 z3errorParsed = [ List [ Atom "error", Atom "\"line 1 column 33: invalid command, '(' expected\""]]
+
+-- | This example is an aggregation of parsable terms taken from the SMT-Lib2
+-- specification:
+-- https://smtlib.cs.uiowa.edu/papers/smt-lib-reference-v2.6-r2021-05-12.pdf#section.3.1
+terms = [r|
+; hexadecimals
+#x0 #xA04
+#x01Ab #x61ff
+; binaries
+#b0 #b1
+#b001 #b101011
+; string literals
+"this is a string literal"
+""
+"She said : ""Bye bye"" and left."
+"this is a string literal
+with a line break in it"
+; symbols
++ <= x plus ** $ <sas <adf>
+abc77 *$s&6 .kkk .8 +34 -32
+| this is a quoted symbol |
+| so is
+this one |
+||
+| " can occur too |
+| af klj^*0asfe2(&*)&(#^$>>>?"']]984|
+; keywords
+:date :a2 :foo-bar
+:<= :56 :->
+|]  
+termsParsed =
+  [ Atom "#x0"
+  , Atom "#xA04"
+  , Atom "#x01Ab"
+  , Atom "#x61ff"
+  , Atom "#b0"
+  , Atom "#b1"
+  , Atom "#b001"
+  , Atom "#b101011"
+  , Atom "\"this is a string literal\""
+  , Atom "\"\""
+  , Atom "\"She said : \"\"Bye bye\"\" and left .\""
+  , Atom "\"this is a string literal\nwith a line break in it\""
+  , Atom "+"
+  , Atom "<="
+  , Atom "x"
+  , Atom "plus"
+  , Atom "**"
+  , Atom "$"
+  , Atom "<sas"
+  , Atom "<adf"
+  , Atom "abc77"
+  , Atom "*$s&6"
+  , Atom ".kkk"
+  , Atom ".8"
+  , Atom "+34"
+  , Atom "-32"
+  , Atom "|this is a quoted symbol|"
+  , Atom "|so is\nthis one|"
+  , Atom "||"
+  , Atom "| \" can occur too|"
+  , Atom "|af klj^*0asfe2(&*)&(#^$>>>?\"']]984|"
+  , Atom ":date"
+  , Atom ":a2"
+  , Atom ":foo-ba"
+  , Atom ":<="
+  , Atom ":56"
+  , Atom ":-"
+  ]
