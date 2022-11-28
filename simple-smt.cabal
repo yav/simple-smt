@@ -32,6 +32,7 @@ test-suite test
   hs-source-dirs:      tests
   main-is: Main.hs
   other-modules:       SimpleSMT.Tests.SExpr
+                       SimpleSMT.Tests.Solver
                        SimpleSMT.Tests.Sources
   ghc-options:         -threaded -Wall -Werror
   build-depends:       base >= 4.15,

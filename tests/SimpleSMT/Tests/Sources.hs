@@ -147,15 +147,13 @@ boolean =
     "boolean"
     [r|
       ; Basic Boolean example
-      (set-option :print-success false)
       (set-logic QF_UF)
       (declare-const p Bool)
       (assert (and p (not p)))
       (check-sat) ; returns 'unsat'
       (exit)
       |]
-    [ List [Atom "set-option", Atom ":print-success", Atom "false"]
-    , List [Atom "set-logic", Atom "QF_UF"]
+    [ List [Atom "set-logic", Atom "QF_UF"]
     , List [Atom "declare-const", Atom "p", Atom "Bool"]
     , List
         [ Atom "assert"
@@ -164,7 +162,6 @@ boolean =
     , List [Atom "check-sat"]
     , List [Atom "exit"]
     ] $ \solver -> do
-    setOption solver ":print-success" "false"
     setLogic solver "QF_UF"
     p <- declare solver "p" tBool
     assert solver $ p `and` not p
@@ -435,7 +432,6 @@ scopes =
     "scopes"
     [r|
       ; Using scopes to explore multiple problems
-      (set-option :print-success false)
       (set-logic QF_LIA)
       (declare-const x Int) (declare-const y Int)
       (assert (= (+ x (* 2 y)) 20))
@@ -451,8 +447,7 @@ scopes =
       (pop 1)
       (exit)
       |]
-    [ List [Atom "set-option", Atom ":print-success", Atom "false"]
-    , List [Atom "set-logic", Atom "QF_LIA"]
+    [ List [Atom "set-logic", Atom "QF_LIA"]
     , List [Atom "declare-const", Atom "x", Atom "Int"]
     , List [Atom "declare-const", Atom "y", Atom "Int"]
     , List
@@ -479,27 +474,25 @@ scopes =
     , List [Atom "pop", Atom "1"]
     , List [Atom "exit"]
     ] $ \solver -> do
-        setOption solver ":print-success" "false"
-        setLogic solver "QF_LIA"
-        x <- declare solver "x" tInt
-        y <- declare solver "y" tInt
-        assert solver $ (x `add` (const "2" `mul` y)) `eq` const "20"
-        push solver
-        assert solver $ (x `sub` y) `eq` const "2"
-        _ <- check solver
-        pop solver
-        push solver
-        assert solver $ (x `sub` y) `eq` const "3"
-        _ <- check solver
-        pop solver
-        simpleCommand solver ["exit"]
+    setLogic solver "QF_LIA"
+    x <- declare solver "x" tInt
+    y <- declare solver "y" tInt
+    assert solver $ (x `add` (const "2" `mul` y)) `eq` const "20"
+    push solver
+    assert solver $ (x `sub` y) `eq` const "2"
+    _ <- check solver
+    pop solver
+    push solver
+    assert solver $ (x `sub` y) `eq` const "3"
+    _ <- check solver
+    pop solver
+    simpleCommand solver ["exit"]
 
 sorts =
   Source
     "sorts"
     [r|
       ; Defining and using new sorts
-      (set-option :print-success false)
       (set-logic QF_UF)
       (declare-sort A 0)
       (declare-const a A) (declare-const b A) (declare-const c A)
@@ -519,8 +512,7 @@ sorts =
       (pop 1)
       (exit)
       |]
-    [ List [Atom "set-option", Atom ":print-success", Atom "false"]
-    , List [Atom "set-logic", Atom "QF_UF"]
+    [ List [Atom "set-logic", Atom "QF_UF"]
     , List [Atom "declare-sort", Atom "A", Atom "0"]
     , List [Atom "declare-const", Atom "a", Atom "A"]
     , List [Atom "declare-const", Atom "b", Atom "A"]
@@ -561,7 +553,6 @@ sorts =
     , List [Atom "pop", Atom "1"]
     , List [Atom "exit"]
     ] $ \solver -> do
-    setOption solver ":print-success" "false"
     setLogic solver "QF_UF"
     simpleCommand solver ["declare-sort", "A", "0"]
     a <- declare solver "a" $ const "A"
@@ -679,7 +670,6 @@ valuesOrModels =
     "values or models"
     [r|
       ; Getting values or models
-      (set-option :print-success false)
       (set-option :produce-models true)
       (set-logic QF_LIA)
       (declare-const x Int)
@@ -696,8 +686,7 @@ valuesOrModels =
       ; )
       (exit)
       |]
-    [ List [Atom "set-option", Atom ":print-success", Atom "false"]
-    , List [Atom "set-option", Atom ":produce-models", Atom "true"]
+    [ List [Atom "set-option", Atom ":produce-models", Atom "true"]
     , List [Atom "set-logic", Atom "QF_LIA"]
     , List [Atom "declare-const", Atom "x", Atom "Int"]
     , List [Atom "declare-const", Atom "y", Atom "Int"]
@@ -718,7 +707,6 @@ valuesOrModels =
     , List [Atom "get-model"]
     , List [Atom "exit"]
     ] $ \solver -> do
-    setOption solver ":print-success" "false"
     setOption solver ":produce-models" "true"
     setLogic solver "QF_LIA"
     x <- declare solver "x" tInt
