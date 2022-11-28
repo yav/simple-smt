@@ -92,11 +92,7 @@ stop solver = do
 
 -- | Create a solver process, use it to make a computation and stop it.
 with :: String -> [String] -> (BS.ByteString -> IO ()) -> (SolverProcess -> IO a) -> IO a
-with exe args logger todo = do
-  solverProcess <- new exe args logger
-  result <- todo solverProcess
-  stop solverProcess
-  return result
+with exe args logger = X.bracket (new exe args logger) stop 
 
 infixr 5 :<
 pattern (:<) :: Char -> BS.ByteString -> BS.ByteString
