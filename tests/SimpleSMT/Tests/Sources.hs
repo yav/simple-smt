@@ -2,60 +2,62 @@
 {-# OPTIONS_GHC -Wno-missing-signatures #-}
 module SimpleSMT.Tests.Sources (Source(..), sources) where
 
-import SimpleSMT.SExpr (SExpr(..))
+import SimpleSMT.SExpr
+import Prelude hiding (and, const, not, or)
+import SimpleSMT.Solver
 import           Text.RawString.QQ
 
-data Source = Source { name :: String, content :: String, parsed :: [SExpr], run !! Solver -> IO () }
+data Source =
+  Source
+    { name :: String
+    , content :: String
+    , parse :: [SExpr]
+    , run :: Solver -> IO ()
+    }
 
 -- | A list of examples SMT-Lib2 files. Most of them were taken from the official
 -- SMT-Lib website:
 -- https://smtlib.cs.uiowa.edu/examples.shtml
 sources =
-  [ Source "assertions" assertions assertionsParsed
-  , Source "assignments" assignments assignmentsParsed
-  , Source "boolean" boolean booleanParsed
-  , Source "info" info infoParsed
-  , Source "integer arithmetic" integerArithmetic integerArithmeticParsed
-  , Source
-      "modeling sequential code (SSA)"
-      modelingSequentialCodeSSA
-      modelingSequentialCodeSSAParsed
-  , Source
-      "modeling sequential code (bitvectors)"
-      modelingSequentialCodeBitvectors
-      modelingSequentialCodeBitvectorsParsed
-  , Source "scopes" scopes scopesParsed
-  , Source "sorts" sorts sortsParsed
-  , Source "unsat cores" unsatCores unsatCoresParsed
-  , Source "values or models" valuesOrModels valuesOrModelsParsed
-  , Source "Z3 error message" z3error z3errorParsed
-  , Source "terms" terms termsParsed
+  [ assertions
+  , assignments
+  , boolean
+  , info
+  , integerArithmetic
+  , modelingSequentialCodeSSA
+  , modelingSequentialCodeBitvectors
+  , scopes
+  , sorts
+  , unsatCores
+  , valuesOrModels
+  , z3error
+  , terms
   ]
 
 assertions =
   Source
     "assertions"
     [r|
-    ; Getting assertions
-    (set-option :produce-assertions true)
-    (set-logic QF_UF)
-    (declare-const p Bool) (declare-const q Bool)
-    (push 1)
-    (assert (or p q))
-    (push 1)
-    (assert (not q))
-    (get-assertions)
-    ; ((or p q)
-    ;  (not q)
-    ; )
-    (pop 1)
-    (get-assertions)
-    ; ((or p q))
-    (pop 1)
-    (get-assertions)
-    ; ()
-    (exit)
-    |]
+      ; Getting assertions
+      (set-option :produce-assertions true)
+      (set-logic QF_UF)
+      (declare-const p Bool) (declare-const q Bool)
+      (push 1)
+      (assert (or p q))
+      (push 1)
+      (assert (not q))
+      (get-assertions)
+      ; ((or p q)
+      ;  (not q)
+      ; )
+      (pop 1)
+      (get-assertions)
+      ; ((or p q))
+      (pop 1)
+      (get-assertions)
+      ; ()
+      (exit)
+      |]
     [ List [Atom "set-option", Atom ":produce-assertions", Atom "true"]
     , List [Atom "set-logic", Atom "QF_UF"]
     , List [Atom "declare-const", Atom "p", Atom "Bool"]
@@ -87,20 +89,20 @@ assertions =
     simpleCommand solver ["exit"]
 
 assignments =
-  Solver
+  Source
     "assignments"
     [r|
-    ; Getting assignments
-    (set-option :produce-assignments true)
-    (set-logic QF_UF)
-    (declare-const p Bool) (declare-const q Bool) (declare-const r Bool)
-    (assert (not (=(! (and (! p :named P) q) :named PQ) (! r :named R))))
-    (check-sat)
-    ; sat
-    (get-assignment)
-    ; ((P true) (R false) (PQ true))
-    (exit)
-    |]
+      ; Getting assignments
+      (set-option :produce-assignments true)
+      (set-logic QF_UF)
+      (declare-const p Bool) (declare-const q Bool) (declare-const r Bool)
+      (assert (not (=(! (and (! p :named P) q) :named PQ) (! r :named R))))
+      (check-sat)
+      ; sat
+      (get-assignment)
+      ; ((P true) (R false) (PQ true))
+      (exit)
+      |]
     [ List [Atom "set-option", Atom ":produce-assignments", Atom "true"]
     , List [Atom "set-logic", Atom "QF_UF"]
     , List [Atom "declare-const", Atom "p", Atom "Bool"]
@@ -134,24 +136,24 @@ assignments =
     setLogic solver "QF_UF"
     p <- declare solver "p" tBool
     q <- declare solver "q" tBool
-    r <- declare solver "r" tBool
-    assert solver $ not $ named (named p "P" `and` q) "PQ" `eq` named r "R"
+    r' <- declare solver "r" tBool
+    assert solver $ not $ named "PQ" (named "P" p `and` q) `eq` named "R" r'
     _ <- check solver
-    command solver $ List [Atom "get-assignment"]
+    _ <- command solver $ List [Atom "get-assignment"]
     simpleCommand solver ["exit"]
 
 boolean =
   Source
     "boolean"
     [r|
-    ; Basic Boolean example
-    (set-option :print-success false)
-    (set-logic QF_UF)
-    (declare-const p Bool)
-    (assert (and p (not p)))
-    (check-sat) ; returns 'unsat'
-    (exit)
-    |]
+      ; Basic Boolean example
+      (set-option :print-success false)
+      (set-logic QF_UF)
+      (declare-const p Bool)
+      (assert (and p (not p)))
+      (check-sat) ; returns 'unsat'
+      (exit)
+      |]
     [ List [Atom "set-option", Atom ":print-success", Atom "false"]
     , List [Atom "set-logic", Atom "QF_UF"]
     , List [Atom "declare-const", Atom "p", Atom "Bool"]
@@ -173,15 +175,15 @@ info =
   Source
     "info"
     [r|
-    ; Getting info
-    (get-info :name)
-    ; (: name "CVC4")
-    (get-info :version )
-    ; (:version "4.0" )
-    (get-info :authors )
-    ; (:authors "The CVC4 Team" )
-    (exit)
-    |]
+      ; Getting info
+      (get-info :name)
+      ; (: name "CVC4")
+      (get-info :version )
+      ; (:version "4.0" )
+      (get-info :authors )
+      ; (:authors "The CVC4 Team" )
+      (exit)
+      |]
     [ List [Atom "get-info", Atom ":name"]
     , List [Atom "get-info", Atom ":version"]
     , List [Atom "get-info", Atom ":authors"]
@@ -196,15 +198,15 @@ integerArithmetic =
   Source
     "integer arithmetic"
     [r|
-    ; Integer arithmetic
-    (set-logic QF_LIA)
-    (declare-const x Int)
-    (declare-const y Int)
-    (assert (= (- x y) (+ x (- y) 1)))
-    (check-sat)
-    ; unsat
-    (exit)
-    |]
+      ; Integer arithmetic
+      (set-logic QF_LIA)
+      (declare-const x Int)
+      (declare-const y Int)
+      (assert (= (- x y) (+ x (- y) 1)))
+      (check-sat)
+      ; unsat
+      (exit)
+      |]
     [ List [Atom "set-logic", Atom "QF_LIA"]
     , List [Atom "declare-const", Atom "x", Atom "Int"]
     , List [Atom "declare-const", Atom "y", Atom "Int"]
@@ -220,9 +222,9 @@ integerArithmetic =
     , List [Atom "exit"]
     ] $ \solver -> do
     setLogic solver "QF_LIA"
-    x <- declare solver x tInt
-    y <- declare solver y tInt
-    assert solver $ (x `sub` y) `eq` addMany x (neg y) (const "1")
+    x <- declare solver "x" tInt
+    y <- declare solver "y" tInt
+    assert solver $ (x `sub` y) `eq` addMany [x, neg y, const "1"]
     _ <- check solver
     simpleCommand solver ["exit"]
 
@@ -230,37 +232,37 @@ modelingSequentialCodeSSA =
   Source
     "modeling sequential code (SSA)"
     [r|
-    ; Modeling sequential code in SSA form
-    ;; Buggy swap
-    ; int x, y;
-    ; int t = x;
-    ; x = y;
-    ; y = x;
+      ; Modeling sequential code in SSA form
+      ;; Buggy swap
+      ; int x, y;
+      ; int t = x;
+      ; x = y;
+      ; y = x;
 
-    (set-logic QF_UFLIA)
-    (set-option :produce-models true)
-    (declare-fun x (Int) Int)  (declare-fun y (Int) Int)
-    (declare-fun t (Int) Int)
-    (assert (= (t 0) (x 0)))
-    (assert (= (y 1) (t 0)))
-    (assert (= (x 1) (y 1)))
+      (set-logic QF_UFLIA)
+      (set-option :produce-models true)
+      (declare-fun x (Int) Int)  (declare-fun y (Int) Int)
+      (declare-fun t (Int) Int)
+      (assert (= (t 0) (x 0)))
+      (assert (= (y 1) (t 0)))
+      (assert (= (x 1) (y 1)))
 
-    (assert
-        (not
-            (and (= (x 1) (y 0)) (= (y 1) (x 0)))))
-    (check-sat)
-    (get-value ((x 0) (y 0) (x 1) (y 1)))
-    ; possible returned valuation:
-    ; (((x 0) (- 1)) ((y 0) 2) ((x 1) (- 1)) ((y 1) (- 1)))
-    (get-model)
-    ; possible returned model:
-    ; (
-    ;  (define-fun x ((_ufmt_1 Int)) Int (- 1))
-    ;  (define-fun y ((_ufmt_1 Int)) Int (ite (= _ufmt_1 1) (- 1) 2))
-    ;  (define-fun t ((_ufmt_1 Int)) Int (- 1))
-    ; )
-    (exit)
-    |]
+      (assert
+          (not
+              (and (= (x 1) (y 0)) (= (y 1) (x 0)))))
+      (check-sat)
+      (get-value ((x 0) (y 0) (x 1) (y 1)))
+      ; possible returned valuation:
+      ; (((x 0) (- 1)) ((y 0) 2) ((x 1) (- 1)) ((y 1) (- 1)))
+      (get-model)
+      ; possible returned model:
+      ; (
+      ;  (define-fun x ((_ufmt_1 Int)) Int (- 1))
+      ;  (define-fun y ((_ufmt_1 Int)) Int (ite (= _ufmt_1 1) (- 1) 2))
+      ;  (define-fun t ((_ufmt_1 Int)) Int (- 1))
+      ; )
+      (exit)
+      |]
     [ List [Atom "set-logic", Atom "QF_UFLIA"]
     , List [Atom "set-option", Atom ":produce-models", Atom "true"]
     , List [Atom "declare-fun", Atom "x", List [Atom "Int"], Atom "Int"]
@@ -358,7 +360,7 @@ modelingSequentialCodeBitvectors =
       ; unsat
       (exit)
       |]
-    [ List [Atom "set-logic", ATOM "QF_BV"]
+    [ List [Atom "set-logic", Atom "QF_BV"]
     , List [Atom "set-option", Atom ":produce-models", Atom "true"]
     , List
         [ Atom "declare-const"
@@ -428,29 +430,27 @@ modelingSequentialCodeBitvectors =
     _ <- check solver
     simpleCommand solver ["exit"]
 
-
-
 scopes =
   Source
     "scopes"
     [r|
-    ; Using scopes to explore multiple problems
-    (set-option :print-success false)
-    (set-logic QF_LIA)
-    (declare-const x Int) (declare-const y Int)
-    (assert (= (+ x (* 2 y)) 20))
-    (push 1)
-        (assert (= (- x y) 2))
-        (check-sat)
-        ; sat
-    (pop 1)
-    (push 1)
-        (assert (= (- x y) 3))
-        (check-sat)
-        ; unsat
-    (pop 1)
-    (exit)
-    |]
+      ; Using scopes to explore multiple problems
+      (set-option :print-success false)
+      (set-logic QF_LIA)
+      (declare-const x Int) (declare-const y Int)
+      (assert (= (+ x (* 2 y)) 20))
+      (push 1)
+          (assert (= (- x y) 2))
+          (check-sat)
+          ; sat
+      (pop 1)
+      (push 1)
+          (assert (= (- x y) 3))
+          (check-sat)
+          ; unsat
+      (pop 1)
+      (exit)
+      |]
     [ List [Atom "set-option", Atom ":print-success", Atom "false"]
     , List [Atom "set-logic", Atom "QF_LIA"]
     , List [Atom "declare-const", Atom "x", Atom "Int"]
@@ -483,7 +483,7 @@ scopes =
         setLogic solver "QF_LIA"
         x <- declare solver "x" tInt
         y <- declare solver "y" tInt
-        assert solver $ (x `add` (const 2 `mul` y)) `eq` const "20"
+        assert solver $ (x `add` (const "2" `mul` y)) `eq` const "20"
         push solver
         assert solver $ (x `sub` y) `eq` const "2"
         _ <- check solver
@@ -498,27 +498,27 @@ sorts =
   Source
     "sorts"
     [r|
-    ; Defining and using new sorts
-    (set-option :print-success false)
-    (set-logic QF_UF)
-    (declare-sort A 0)
-    (declare-const a A) (declare-const b A) (declare-const c A)
-    (declare-const d A) (declare-const e A)
-    (assert (or (= c a)(= c b)))
-    (assert (or (= d a)(= d b)))
-    (assert (or (= e a)(= e b)))
-    (push 1)
-        (assert (distinct c d))
-        (check-sat)
-        ; sat
-    (pop 1)
-    (push 1)
-        (assert (distinct c d e))
-        (check-sat)
-        ; unsat
-    (pop 1)
-    (exit)
-    |]
+      ; Defining and using new sorts
+      (set-option :print-success false)
+      (set-logic QF_UF)
+      (declare-sort A 0)
+      (declare-const a A) (declare-const b A) (declare-const c A)
+      (declare-const d A) (declare-const e A)
+      (assert (or (= c a)(= c b)))
+      (assert (or (= d a)(= d b)))
+      (assert (or (= e a)(= e b)))
+      (push 1)
+          (assert (distinct c d))
+          (check-sat)
+          ; sat
+      (pop 1)
+      (push 1)
+          (assert (distinct c d e))
+          (check-sat)
+          ; unsat
+      (pop 1)
+      (exit)
+      |]
     [ List [Atom "set-option", Atom ":print-success", Atom "false"]
     , List [Atom "set-logic", Atom "QF_UF"]
     , List [Atom "declare-sort", Atom "A", Atom "0"]
@@ -563,7 +563,7 @@ sorts =
     ] $ \solver -> do
     setOption solver ":print-success" "false"
     setLogic solver "QF_UF"
-    simpleCommand solver ["declare-sort" "A" "0"]
+    simpleCommand solver ["declare-sort", "A", "0"]
     a <- declare solver "a" $ const "A"
     b <- declare solver "b" $ const "A"
     c <- declare solver "c" $ const "A"
@@ -582,190 +582,233 @@ sorts =
     pop solver
     simpleCommand solver ["exit"]
 
-unsatCores = [r|
-; Getting unsatisfiable cores
-(set-option :produce-unsat-cores true)
-(set-logic QF_UF)
-(declare-const p Bool) (declare-const q Bool) (declare-const r Bool)
-(declare-const s Bool) (declare-const t Bool)
-(assert (! (=> p q) :named PQ))
-(assert (! (=> q r) :named QR))
-(assert (! (=> r s) :named RS))
-(assert (! (=> s t) :named ST))
-(assert (! (not (=> q s)) :named NQS))
-(check-sat)
-; unsat
-(get-unsat-core)
-; (QR RS NQS)
-(exit)|]
-unsatCoresParsed =
-  [ List [Atom "set-option", Atom ":produce-unsat-cores", Atom "true"]
-  , List [Atom "set-logic", Atom "QF_UF"]
-  , List [Atom "declare-const", Atom "p", Atom "Bool"]
-  , List [Atom "declare-const", Atom "q", Atom "Bool"]
-  , List [Atom "declare-const", Atom "r", Atom "Bool"]
-  , List [Atom "declare-const", Atom "s", Atom "Bool"]
-  , List [Atom "declare-const", Atom "t", Atom "Bool"]
-  , List
-      [ Atom "assert"
-      , List
-          [ Atom "!"
-          , List [Atom "=>", Atom "p", Atom "q"]
-          , Atom ":named"
-          , Atom "PQ"
-          ]
-      ]
-  , List
-      [ Atom "assert"
-      , List
-          [ Atom "!"
-          , List [Atom "=>", Atom "q", Atom "r"]
-          , Atom ":named"
-          , Atom "QR"
-          ]
-      ]
-  , List
-      [ Atom "assert"
-      , List
-          [ Atom "!"
-          , List [Atom "=>", Atom "r", Atom "s"]
-          , Atom ":named"
-          , Atom "RS"
-          ]
-      ]
-  , List
-      [ Atom "assert"
-      , List
-          [ Atom "!"
-          , List [Atom "=>", Atom "s", Atom "t"]
-          , Atom ":named"
-          , Atom "ST"
-          ]
-      ]
-  , List
-      [ Atom "assert"
-      , List
-          [ Atom "!"
-          , List [Atom "not", List [Atom "=>", Atom "q", Atom "s"]]
-          , Atom ":named"
-          , Atom "NQS"
-          ]
-      ]
-  , List [Atom "check-sat"]
-  , List [Atom "get-unsat-core"]
-  , List [Atom "exit"]
-  ]
+unsatCores =
+  Source
+    "unsat cores"
+    [r|
+      ; Getting unsatisfiable cores
+      (set-option :produce-unsat-cores true)
+      (set-logic QF_UF)
+      (declare-const p Bool) (declare-const q Bool) (declare-const r Bool)
+      (declare-const s Bool) (declare-const t Bool)
+      (assert (! (=> p q) :named PQ))
+      (assert (! (=> q r) :named QR))
+      (assert (! (=> r s) :named RS))
+      (assert (! (=> s t) :named ST))
+      (assert (! (not (=> q s)) :named NQS))
+      (check-sat)
+      ; unsat
+      (get-unsat-core)
+      ; (QR RS NQS)
+      (exit)
+      |]
+    [ List [Atom "set-option", Atom ":produce-unsat-cores", Atom "true"]
+    , List [Atom "set-logic", Atom "QF_UF"]
+    , List [Atom "declare-const", Atom "p", Atom "Bool"]
+    , List [Atom "declare-const", Atom "q", Atom "Bool"]
+    , List [Atom "declare-const", Atom "r", Atom "Bool"]
+    , List [Atom "declare-const", Atom "s", Atom "Bool"]
+    , List [Atom "declare-const", Atom "t", Atom "Bool"]
+    , List
+        [ Atom "assert"
+        , List
+            [ Atom "!"
+            , List [Atom "=>", Atom "p", Atom "q"]
+            , Atom ":named"
+            , Atom "PQ"
+            ]
+        ]
+    , List
+        [ Atom "assert"
+        , List
+            [ Atom "!"
+            , List [Atom "=>", Atom "q", Atom "r"]
+            , Atom ":named"
+            , Atom "QR"
+            ]
+        ]
+    , List
+        [ Atom "assert"
+        , List
+            [ Atom "!"
+            , List [Atom "=>", Atom "r", Atom "s"]
+            , Atom ":named"
+            , Atom "RS"
+            ]
+        ]
+    , List
+        [ Atom "assert"
+        , List
+            [ Atom "!"
+            , List [Atom "=>", Atom "s", Atom "t"]
+            , Atom ":named"
+            , Atom "ST"
+            ]
+        ]
+    , List
+        [ Atom "assert"
+        , List
+            [ Atom "!"
+            , List [Atom "not", List [Atom "=>", Atom "q", Atom "s"]]
+            , Atom ":named"
+            , Atom "NQS"
+            ]
+        ]
+    , List [Atom "check-sat"]
+    , List [Atom "get-unsat-core"]
+    , List [Atom "exit"]
+    ] $ \solver -> do
+    setOption solver ":produce-unsat-cores" "true"
+    setLogic solver "QF_UF"
+    p <- declare solver "p" tBool
+    q <- declare solver "q" tBool
+    r' <- declare solver "r" tBool
+    s <- declare solver "s" tBool
+    t <- declare solver "t" tBool
+    assert solver $ named "PQ" $ p `implies` q
+    assert solver $ named "QR" $ q `implies` r'
+    assert solver $ named "RS" $ r' `implies` s
+    assert solver $ named "ST" $ s `implies` t
+    assert solver $ named "NQS" $ not $ q `implies` s
+    _ <- check solver
+    _ <- getUnsatCore solver
+    simpleCommand solver ["exit"]
 
-valuesOrModels = [r|
- ; Getting values or models
-(set-option :print-success false)
-(set-option :produce-models true)
-(set-logic QF_LIA)
-(declare-const x Int)
-(declare-const y Int)
-(assert (= (+ x (* 2 y)) 20))
-(assert (= (- x y) 2))
-(check-sat)
-; sat
-(get-value (x y))
-; ((x 8) (y 6))
-(get-model)
-; ((define-fun x () Int 8)
-;  (define-fun y () Int 6)
-; )
-(exit)|]
-valuesOrModelsParsed =
-  [ List [Atom "set-option", Atom ":print-success", Atom "false"]
-  , List [Atom "set-option", Atom ":produce-models", Atom "true"]
-  , List [Atom "set-logic", Atom "QF_LIA"]
-  , List [Atom "declare-const", Atom "x", Atom "Int"]
-  , List [Atom "declare-const", Atom "y", Atom "Int"]
-  , List
-      [ Atom "assert"
-      , List
-          [ Atom "="
-          , List [Atom "+", Atom "x", List [Atom "*", Atom "2", Atom "y"]]
-          , Atom "20"
-          ]
-      ]
-  , List
-      [ Atom "assert"
-      , List [Atom "=", List [Atom "-", Atom "x", Atom "y"], Atom "2"]
-      ]
-  , List [Atom "check-sat"]
-  , List [Atom "get-value", List [Atom "x", Atom "y"]]
-  , List [Atom "get-model"]
-  , List [Atom "exit"]
-  ]
+valuesOrModels =
+  Source
+    "values or models"
+    [r|
+      ; Getting values or models
+      (set-option :print-success false)
+      (set-option :produce-models true)
+      (set-logic QF_LIA)
+      (declare-const x Int)
+      (declare-const y Int)
+      (assert (= (+ x (* 2 y)) 20))
+      (assert (= (- x y) 2))
+      (check-sat)
+      ; sat
+      (get-value (x y))
+      ; ((x 8) (y 6))
+      (get-model)
+      ; ((define-fun x () Int 8)
+      ;  (define-fun y () Int 6)
+      ; )
+      (exit)
+      |]
+    [ List [Atom "set-option", Atom ":print-success", Atom "false"]
+    , List [Atom "set-option", Atom ":produce-models", Atom "true"]
+    , List [Atom "set-logic", Atom "QF_LIA"]
+    , List [Atom "declare-const", Atom "x", Atom "Int"]
+    , List [Atom "declare-const", Atom "y", Atom "Int"]
+    , List
+        [ Atom "assert"
+        , List
+            [ Atom "="
+            , List [Atom "+", Atom "x", List [Atom "*", Atom "2", Atom "y"]]
+            , Atom "20"
+            ]
+        ]
+    , List
+        [ Atom "assert"
+        , List [Atom "=", List [Atom "-", Atom "x", Atom "y"], Atom "2"]
+        ]
+    , List [Atom "check-sat"]
+    , List [Atom "get-value", List [Atom "x", Atom "y"]]
+    , List [Atom "get-model"]
+    , List [Atom "exit"]
+    ] $ \solver -> do
+    setOption solver ":print-success" "false"
+    setOption solver ":produce-models" "true"
+    setLogic solver "QF_LIA"
+    x <- declare solver "x" tInt
+    y <- declare solver "y" tInt
+    assert solver $ (x `add` (const "2" `mul` y)) `eq` const "20"
+    assert solver $ (x `sub` y) `eq` const "2"
+    _ <- check solver
+    _ <- getExprs solver [x, y]
+    simpleCommand solver ["exit"]
 
-z3error = "(error \"line 1 column 33: invalid command, '(' expected\")"
-z3errorParsed = [ List [ Atom "error", Atom "\"line 1 column 33: invalid command, '(' expected\""]]
+z3error =
+  let parsed =
+        List
+          [ Atom "error"
+          , Atom "\"line 1 column 33: invalid command, '(' expected\""
+          ]
+   in Source
+        "z3 error"
+        "(error \"line 1 column 33: invalid command, '(' expected\")"
+        [parsed] $ \solver -> command solver parsed >> return ()
 
 -- | This example is an aggregation of parsable terms taken from the SMT-Lib2
 -- specification:
 -- https://smtlib.cs.uiowa.edu/papers/smt-lib-reference-v2.6-r2021-05-12.pdf#section.3.1
-terms = [r|
-; hexadecimals
-#x0 #xA04
-#x01Ab #x61ff
-; binaries
-#b0 #b1
-#b001 #b101011
-; string literals
-"this is a string literal"
-""
-"She said : ""Bye bye"" and left."
-"this is a string literal
-with a line break in it"
-; symbols
-+ <= x plus ** $ <sas <adf>
-abc77 *$s&6 .kkk .8 +34 -32
-|this is a quoted symbol|
-|so is
-this one|
-||
-| " can occur too|
-|af klj^*0asfe2(&*)&(#^$>>>?"']]984|
-; keywords
-:date :a2 :foo-bar
-:<= :56 :->
-|]
-termsParsed =
-  [ Atom "#x0"
-  , Atom "#xA04"
-  , Atom "#x01Ab"
-  , Atom "#x61ff"
-  , Atom "#b0"
-  , Atom "#b1"
-  , Atom "#b001"
-  , Atom "#b101011"
-  , Atom "\"this is a string literal\""
-  , Atom "\"\""
-  , Atom "\"She said : \"\"Bye bye\"\" and left.\""
-  , Atom "\"this is a string literal\nwith a line break in it\""
-  , Atom "+"
-  , Atom "<="
-  , Atom "x"
-  , Atom "plus"
-  , Atom "**"
-  , Atom "$"
-  , Atom "<sas"
-  , Atom "<adf>"
-  , Atom "abc77"
-  , Atom "*$s&6"
-  , Atom ".kkk"
-  , Atom ".8"
-  , Atom "+34"
-  , Atom "-32"
-  , Atom "|this is a quoted symbol|"
-  , Atom "|so is\nthis one|"
-  , Atom "||"
-  , Atom "| \" can occur too|"
-  , Atom "|af klj^*0asfe2(&*)&(#^$>>>?\"']]984|"
-  , Atom ":date"
-  , Atom ":a2"
-  , Atom ":foo-bar"
-  , Atom ":<="
-  , Atom ":56"
-  , Atom ":->"
-  ]
+terms =
+  let parsed =
+        [ Atom "#x0"
+        , Atom "#xA04"
+        , Atom "#x01Ab"
+        , Atom "#x61ff"
+        , Atom "#b0"
+        , Atom "#b1"
+        , Atom "#b001"
+        , Atom "#b101011"
+        , Atom "\"this is a string literal\""
+        , Atom "\"\""
+        , Atom "\"She said : \"\"Bye bye\"\" and left.\""
+        , Atom "\"this is a string literal\n          with a line break in it\""
+        , Atom "+"
+        , Atom "<="
+        , Atom "x"
+        , Atom "plus"
+        , Atom "**"
+        , Atom "$"
+        , Atom "<sas"
+        , Atom "<adf>"
+        , Atom "abc77"
+        , Atom "*$s&6"
+        , Atom ".kkk"
+        , Atom ".8"
+        , Atom "+34"
+        , Atom "-32"
+        , Atom "|this is a quoted symbol|"
+        , Atom "|so is\n          this one|"
+        , Atom "||"
+        , Atom "| \" can occur too|"
+        , Atom "|af klj^*0asfe2(&*)&(#^$>>>?\"']]984|"
+        , Atom ":date"
+        , Atom ":a2"
+        , Atom ":foo-bar"
+        , Atom ":<="
+        , Atom ":56"
+        , Atom ":->"
+        ]
+   in Source
+        "terms"
+        [r|
+          ; hexadecimals
+          #x0 #xA04
+          #x01Ab #x61ff
+          ; binaries
+          #b0 #b1
+          #b001 #b101011
+          ; string literals
+          "this is a string literal"
+          ""
+          "She said : ""Bye bye"" and left."
+          "this is a string literal
+          with a line break in it"
+          ; symbols
+          + <= x plus ** $ <sas <adf>
+          abc77 *$s&6 .kkk .8 +34 -32
+          |this is a quoted symbol|
+          |so is
+          this one|
+          ||
+          | " can occur too|
+          |af klj^*0asfe2(&*)&(#^$>>>?"']]984|
+          ; keywords
+          :date :a2 :foo-bar
+          :<= :56 :->
+          |]
+        parsed $ \solver -> mapM_ (command solver) parsed

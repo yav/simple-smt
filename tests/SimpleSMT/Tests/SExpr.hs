@@ -3,13 +3,13 @@ module SimpleSMT.Tests.SExpr (tests) where
 
 import qualified SimpleSMT.SExpr as SExpr
 import qualified SimpleSMT.Tests.Sources as Src
-  
+
 import Control.Monad (zipWithM_)
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.List (unfoldr)
 import Test.Tasty
 import Test.Tasty.HUnit
-  
+
 tests :: TestTree
 tests =
   testGroup
@@ -26,7 +26,7 @@ testParser name parse = testGroup name $ do
   source <- Src.sources
   return $
     testCase (Src.name source) $ do
-      let expecteds = Src.parsed source
+      let expecteds = Src.parse source
           gots = parse $ Src.content source
       zipWithM_
         (\expected got ->
