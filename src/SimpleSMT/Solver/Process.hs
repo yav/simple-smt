@@ -1,5 +1,8 @@
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE PatternGuards #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms   #-}
+{-# LANGUAGE ViewPatterns      #-}
 module SimpleSMT.Solver.Process
   ( SolverProcess(..)
   , new
@@ -14,10 +17,13 @@ import qualified SimpleSMT.Solver as Solver
 import Control.Monad (forever)
 import Control.Concurrent.Async (Async, async, cancel)
 import qualified Control.Exception as X
-import Data.ByteString.Builder (hPutBuilder)
+import Data.ByteString.Builder
+  ( Builder
+  , hPutBuilder
+  , byteString
+  , toLazyByteString
+  )
 import qualified Data.ByteString.Char8 as BS
-import qualified Data.ByteString.Lazy.Char8 as LBS
-import Data.IORef (newIORef)
 import System.Exit(ExitCode)
 import System.IO (Handle, hClose)
 import qualified System.Process.Typed as P (proc)
@@ -88,10 +94,54 @@ stop solver = do
 with :: String -> [String] -> (BS.ByteString -> IO ()) -> (SolverProcess -> IO a) -> IO a
 with exe args logger = X.bracket (new exe args logger) stop 
 
+infixr 5 :<
+pattern (:<) :: Char -> BS.ByteString -> BS.ByteString
+pattern c :< rest <- (BS.uncons -> Just (c, rest))
 -- | Make the solver process into a solver backend.
-toBackend :: SolverProcess -> IO Solver.Backend
-toBackend solver = do
-  response <- (LBS.hGetContents $ getStdout $ process solver) >>= newIORef
-  return $
-    flip Solver.Backend response $ \cmd ->
-      hPutBuilder (getStdin $ process solver) cmd
+toBackend :: SolverProcess -> Solver.Backend
+toBackend solver =
+  Solver.Backend $ \cmd -> do
+    hPutBuilder (getStdin $ process solver) cmd
+    toLazyByteString <$> scanParen 0 mempty mempty
+  where
+    -- scanParen read lines from the solver's output channel until it has detected
+    -- a complete s-expression, i.e. a well-parenthesized word that may contain
+    -- strings, quoted symbols, and comments
+    -- if we detect a ')' at depth 0 that is not enclosed in a string, a quoted
+    -- symbol or a comment, we give up and return immediately
+    -- see also the SMT-LIB standard v2.6
+    -- https://smtlib.cs.uiowa.edu/papers/smt-lib-reference-v2.6-r2021-05-12.pdf#part.2
+    scanParen :: Int -> Builder -> BS.ByteString -> IO Builder
+    scanParen depth acc ('(' :< more) = scanParen (depth + 1) acc more
+    scanParen depth acc ('"' :< more) = do
+      (acc', more') <- string acc more
+      scanParen depth acc' more'
+    scanParen depth acc ('|' :< more) = do
+      (acc', more') <- quotedSymbol acc more
+      scanParen depth acc' more'
+    scanParen depth acc (';' :< _) = continueNextLine (scanParen depth) acc
+    scanParen depth acc (')' :< more)
+      | depth <= 1 = return acc
+      | otherwise = scanParen (depth - 1) acc more
+    scanParen depth acc (_ :< more) = scanParen depth acc more
+    -- mempty case
+    scanParen 0 acc _ = return acc
+    scanParen depth acc _ = continueNextLine (scanParen depth) acc
+
+    string :: Builder -> BS.ByteString -> IO (Builder, BS.ByteString)
+    string acc ('"' :< '"' :< more) = string acc more
+    string acc ('"' :< more) = return (acc, more)
+    string acc (_ :< more) = string acc more
+    -- mempty case
+    string acc _ = continueNextLine string acc
+
+    quotedSymbol :: Builder -> BS.ByteString -> IO (Builder, BS.ByteString)
+    quotedSymbol acc ('|' :< more) = return (acc, more)
+    quotedSymbol acc (_ :< more) = string acc more
+    -- mempty case
+    quotedSymbol acc _ = continueNextLine quotedSymbol acc
+
+    continueNextLine :: (Builder -> BS.ByteString -> IO a) -> Builder -> IO a
+    continueNextLine f acc = do
+      next <- BS.hGetLine $ getStdout $ process solver
+      f (acc <> byteString next) next
