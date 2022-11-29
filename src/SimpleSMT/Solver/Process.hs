@@ -101,9 +101,8 @@ pattern c :< rest <- (BS.uncons -> Just (c, rest))
 toBackend :: SolverProcess -> Solver.Backend
 toBackend solver =
   Solver.Backend $ \cmd -> do
-    hPutBuilder (getStdin $ process solver) cmd
+    hPutBuilder (getStdin $ process solver) $ cmd <> "\n"
     hFlush $ getStdin $ process solver
-    BS.putStrLn "command sent to the solver"
     toLazyByteString <$> continueNextLine (scanParen 0) mempty
   where
     -- scanParen read lines from the solver's output channel until it has detected
@@ -145,7 +144,5 @@ toBackend solver =
 
     continueNextLine :: (Builder -> BS.ByteString -> IO a) -> Builder -> IO a
     continueNextLine f acc = do
-      BS.putStrLn "reading output ..."
       next <- BS.hGetLine $ getStdout $ process solver
-      BS.putStrLn next
       f (acc <> byteString next) next

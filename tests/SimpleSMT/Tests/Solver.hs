@@ -6,7 +6,6 @@ import qualified SimpleSMT.Solver as Solver
 import qualified SimpleSMT.Solver.Process as Process
 import qualified SimpleSMT.Tests.Sources as Src
 
-import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.ByteString.Builder (toLazyByteString)
 import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.List (unfoldr, isPrefixOf)
@@ -17,11 +16,13 @@ tests :: TestTree
 tests =
   testGroup
     "Solver"
-    [ testBackend "dummy" $ \todo -> do
+    [ testBackend "dummy" Src.sources $ \todo -> do
         backend <- dummy
-        todo backend,
-      testBackend "process" $ \todo -> Process.with "z3" ["-in"] (const $ return ()) $ todo . Process.toBackend
-
+        todo backend
+    , testBackend
+        "process"
+        (filter (\source -> Src.name source /= "terms") Src.sources) $ \todo ->
+        Process.with "z3" ["-in"] (const $ return ()) $ todo . Process.toBackend
     ]
 
 -- | A simple backend that's always successful.
@@ -30,11 +31,9 @@ dummy = do
   printSuccess <- newIORef False
   return $
     Solver.Backend $ \cmd
-      -- LBS.putStrLn $ toLazyByteString cmd
      -> do
       res <-
         process printSuccess $ unfoldr SExpr.parseSExpr $ toLazyByteString cmd
-      -- LBS.putStrLn res
       return res
   where
     process _ [] = return ""
@@ -62,8 +61,11 @@ dummy = do
       ((res <> "\n") <>) <$> process printSuccess exprs
 
 testBackend ::
-     String -> ((Solver.Backend -> Assertion) -> Assertion) -> TestTree
-testBackend name with =
+     String
+  -> [Src.Source]
+  -> ((Solver.Backend -> Assertion) -> Assertion)
+  -> TestTree
+testBackend name sources with =
   testGroup name $ do
     lazyMode <- [False, True]
     return $
@@ -71,9 +73,9 @@ testBackend name with =
         (if lazyMode
            then "lazy"
            else "eager") $ do
-        source <- Src.sources
+        source <- sources
         return $
           testCase (Src.name source) $
           with $ \backend -> do
-            solver <- Solver.initSolverWith backend lazyMode LBS.putStrLn
+            solver <- Solver.initSolverWith backend lazyMode (const $ return ())
             Src.run source solver
