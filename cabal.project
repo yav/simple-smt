@@ -1,2 +1,3 @@
 packages: ./
           Z3/
+          tests/
