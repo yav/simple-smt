@@ -6,4 +6,4 @@ import Test.Tasty
 
 main :: IO ()
 main = do
-  defaultMain $ testGroup "Tests" $ [ SExpr.tests, Solver.tests ] 
+  defaultMain $ testGroup "Tests" $ [ SExpr.tests, Solver.tests ]
