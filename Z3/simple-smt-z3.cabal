@@ -27,3 +27,15 @@ library
     extra-libraries:
         gomp z3 gomp
   default-language: Haskell2010
+
+test-suite test
+  type: exitcode-stdio-1.0
+  hs-source-dirs:      tests
+  main-is: Main.hs
+  ghc-options:         -threaded -Wall -Werror
+  build-depends:       base >= 4.15,
+                       bytestring >= 0.10,
+                       simple-smt,
+                       simple-smt-z3,
+                       tasty
+  default-language:    Haskell2010

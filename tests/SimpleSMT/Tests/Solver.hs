@@ -6,6 +6,7 @@ import qualified SimpleSMT.Solver as Solver
 import qualified SimpleSMT.Solver.Process as Process
 import qualified SimpleSMT.Tests.Sources as Src
 
+import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.ByteString.Builder (toLazyByteString)
 import Data.IORef (newIORef, readIORef, writeIORef)
 import Data.List (unfoldr, isPrefixOf)
@@ -16,14 +17,18 @@ tests :: TestTree
 tests =
   testGroup
     "Solver"
-    [ testBackend "dummy" Src.sources $ \todo -> do
+    [ testBackend "dummy" Src.sources noLogging $ \todo -> do
         backend <- dummy
         todo backend
     , testBackend
         "process"
-        (filter (\source -> Src.name source /= "terms") Src.sources) $ \todo ->
+        sourcesNoTerms
+        noLogging $ \todo ->
         Process.with "z3" ["-in"] (const $ return ()) $ todo . Process.toBackend
     ]
+  where
+    noLogging = const $ return ()
+    sourcesNoTerms = (filter (\source -> Src.name source /= "terms") Src.sources)
 
 -- | A simple backend that's always successful.
 dummy :: IO Solver.Backend
@@ -63,9 +68,10 @@ dummy = do
 testBackend ::
      String
   -> [Src.Source]
+  -> (LBS.ByteString -> IO ())
   -> ((Solver.Backend -> Assertion) -> Assertion)
   -> TestTree
-testBackend name sources with =
+testBackend name sources logger with =
   testGroup name $ do
     lazyMode <- [False, True]
     return $
@@ -77,5 +83,5 @@ testBackend name sources with =
         return $
           testCase (Src.name source) $
           with $ \backend -> do
-            solver <- Solver.initSolverWith backend lazyMode (const $ return ())
+            solver <- Solver.initSolverWith backend lazyMode logger
             Src.run source solver

@@ -324,7 +324,7 @@ modelingSequentialCodeSSA =
       (app x [one] `eq` app y [zero]) `and` (app y [one] `eq` app x [zero])
     _ <- check solver
     _ <- getExprs solver [app x [zero], app y [zero], app x [one], app y [one]]
-    _ <- command solver $ List [Atom "get-value"]
+    _ <- command solver $ List [Atom "get-model"]
     simpleCommand solver ["exit"]
 
 modelingSequentialCodeBitvectors =
