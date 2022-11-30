@@ -25,7 +25,7 @@ import Data.ByteString.Builder
   )
 import qualified Data.ByteString.Char8 as BS
 import System.Exit(ExitCode)
-import System.IO (Handle, hClose, hFlush)
+import System.IO (Handle, hClose, hFlush, hSetBinaryMode)
 import qualified System.Process.Typed as P (proc)
 import System.Process.Typed
   ( Process
