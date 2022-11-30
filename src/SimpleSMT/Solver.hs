@@ -1,6 +1,31 @@
 {-# LANGUAGE OverloadedStrings #-}
 
--- | A module for interacting with an SMT solver, using SmtLib-2 format.
+{-|
+A module for interacting with an SMT solver, using SmtLib-2 format.
+
+A typical use of this module would look like the following.
+@
+import SimpleSMT.SExpr
+import SimpleSMT.Solver
+import qualified myBackend
+import qualified Data.ByteString.Lazy.Char8 as LBS
+import System.IO (putStrLn)
+
+main :: IO ()
+main = do
+  backend <- myBackend.new
+  solver <- initSolverWith backend lazyMode logger
+  setLogic solver "QF_UF"
+  p <- declare solver "p" tBool
+  assert solver $ p `and` not p
+  result <- check solver
+  putStrLn $ "result: " ++ show result
+  myBackend.stop backend
+
+ where lazyMode = True
+       logger = LBS.putStrLn
+@
+-}
 module SimpleSMT.Solver
     -- * Basic Solver Interface
   ( Solver(..)
