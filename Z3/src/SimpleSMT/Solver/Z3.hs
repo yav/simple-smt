@@ -3,6 +3,7 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 
+-- | A module providing a backend that sends commands to Z3 using its C API.
 module SimpleSMT.Solver.Z3
   ( Z3(..)
   , new
