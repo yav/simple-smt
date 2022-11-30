@@ -1,14 +1,12 @@
-{-# LANGUAGE EmptyDataDecls #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module SimpleSMT.Solver.Z3
-  ( Z3(..)
+  ( Handle (toBackend)
   , new
-  , free
+  , close
   , with
-  , toBackend
   ) where
 
 import qualified SimpleSMT.Solver as Solver
@@ -42,13 +40,15 @@ C.context
      })
 C.include "z3.h"
 
-data Z3 = Z3
-    { context :: ForeignPtr LogicalContext
+data Handle = Handle
+  { context :: ForeignPtr LogicalContext
     -- ^ A black-box representing the internal state of the solver.
-    }
+  , toBackend :: Solver.Backend
+    -- ^ Create a solver backend out of a Z3 instance.
+  }
 
 -- | Create a new solver instance.
-new :: IO Z3
+new :: IO Handle
 new = do
   let ctxFinalizer =
         [C.funPtr| void free_context(Z3_context ctx) {
@@ -62,21 +62,11 @@ new = do
                  Z3_del_config(cfg);
                  return ctx;
                  } |]
-  return $ Z3 ctx
+  return $ Handle { context = ctx, toBackend = toBackend' ctx }
 
--- | Release the resources associated with a Z3 instance.
-free :: Z3 -> IO ()
-free = finalizeForeignPtr . context
-
--- | Create a Z3 instance, use it to run a computation and release its resources.
-with :: (Z3 -> IO a) -> IO a
-with = bracket new free
-
--- | Create a solver backend out of a Z3 instance.
-toBackend :: Z3 -> Solver.Backend
-toBackend z3 =
+toBackend' :: ForeignPtr LogicalContext -> Solver.Backend
+toBackend' ctx =
   Solver.Backend $ \cmd -> do
-    let ctx = context z3
     let cmd' =
           LBS.toStrict $
           toLazyByteStringWith
@@ -88,3 +78,12 @@ toBackend z3 =
        [CU.exp| const char* {
                Z3_eval_smtlib2_string($fptr-ptr:(Z3_context ctx), $bs-ptr:cmd')
                }|])
+
+-- | Release the resources associated with a Z3 instance.
+close :: Handle -> IO ()
+close = finalizeForeignPtr . context
+
+-- | Create a Z3 instance, use it to run a computation and release its resources.
+with :: (Handle -> IO a) -> IO a
+with = bracket new close
+
