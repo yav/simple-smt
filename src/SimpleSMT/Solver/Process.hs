@@ -72,7 +72,8 @@ new exe args logger = do
   return $ SolverProcess solverProcess solverErrorReader
   where
     createLoggedPipe =
-      mkPipeStreamSpec $ \_ h ->
+      mkPipeStreamSpec $ \_ h -> do
+        hSetBinaryMode h True
         return
           ( h
           , hClose h `X.catch` \ex ->
