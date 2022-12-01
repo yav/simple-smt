@@ -131,7 +131,7 @@ sendSolver solver cmd = do
 -- not be overriden manually.
 initSolverWith ::
      Backend
-  -- | whether to enable lazy mode
+  -- | whether to enable lazy mode. See 'Solver' for the meaning of this flag.
   -> Bool
   -- | function for logging the solver's activity
   -> (LBS.ByteString -> IO ())
