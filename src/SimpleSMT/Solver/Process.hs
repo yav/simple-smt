@@ -25,7 +25,7 @@ import Data.ByteString.Builder
   )
 import qualified Data.ByteString.Char8 as BS
 import System.Exit(ExitCode)
-import System.IO (Handle, hClose, hFlush, hSetBinaryMode)
+import System.IO (Handle, hClose, hFlush, hSetBinaryMode, hSetBuffering, BufferMode(..))
 import qualified System.Process.Typed as P (proc)
 import System.Process.Typed
   ( Process
@@ -74,6 +74,7 @@ new exe args logger = do
     createLoggedPipe =
       mkPipeStreamSpec $ \_ h -> do
         hSetBinaryMode h True
+        hSetBuffering h $ BlockBuffering Nothing
         return
           ( h
           , hClose h `X.catch` \ex ->
