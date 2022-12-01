@@ -92,15 +92,27 @@ flushQueue :: Queue -> IO Builder
 flushQueue q = atomicModifyIORef q $ \cmds ->
     (mempty, cmds)
 
-{-| A solver is essentially a wrapper around a solver backend.
-It also comes with a function for logging the solver's activity, and an optional queue of commands to send to the backend.
+{-| A solver is essentially a wrapper around a solver backend. It also comes with
+a function for logging the solver's activity, and an optional queue of commands
+to send to the backend.
 
-A solver can either be in eager mode or lazy mode. In eager mode, the queue of commands isn't used and the commands are sent to the backend immediately.
-In lazy mode, commands whose output are not strictly necessary for the rest of the computation (typically the ones whose output should just be "success") and that are sent through 'ackCommand' are not sent to the backend immediately, but rather written on the solver's queue.
-When a command whose output is actually necessary needs to be sent, the queue is flushed and sent as a batch to the backend.
+A solver can either be in eager mode or lazy mode. In eager mode, the queue of
+commands isn't used and the commands are sent to the backend immediately. In
+lazy mode, commands whose output are not strictly necessary for the rest of the
+computation (typically the ones whose output should just be "success") and that
+are sent through 'ackCommand' are not sent to the backend immediately, but
+rather written on the solver's queue. When a command whose output is actually
+necessary needs to be sent, the queue is flushed and sent as a batch to the
+backend.
 
-Lazy mode should be faster as there usually is a non-negligible constant overhead in sending a command to the backend. But since the commands are sent by batches, a command sent to the solver will only produce an error when the queue is flushed, i.e. when a command with interesting output is sent. You thus probably want to stick with eager mode when debugging.
-Moreover, when commands are sent by batches, only the last command in the batch may produce an output for parsing to work properly. Hence the ":print-success" option is disabled in lazy mode, and this should not be overriden manually.
+Lazy mode should be faster as there usually is a non-negligible constant
+overhead in sending a command to the backend. But since the commands are sent by
+batches, a command sent to the solver will only produce an error when the queue
+is flushed, i.e. when a command with interesting output is sent. You thus
+probably want to stick with eager mode when debugging. Moreover, when commands
+are sent by batches, only the last command in the batch may produce an output
+for parsing to work properly. Hence the ":print-success" option is disabled in
+lazy mode, and this should not be overriden manually.
 -}
 data Solver = Solver
   { backend :: Backend
