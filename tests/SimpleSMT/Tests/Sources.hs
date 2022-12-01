@@ -7,12 +7,19 @@ import Prelude hiding (and, const, not, or)
 import SimpleSMT.Solver
 import           Text.RawString.QQ
 
+-- | A source is a list of SMTLib2 commands, available in several different formats
+-- for testing purposes.
 data Source =
   Source
     { name :: String
+    -- ^ The name of the source.
     , content :: String
+    -- ^ The raw content of the source. It may contain comments and extra-whitespace.
     , parse :: [SExpr]
+    -- ^ The list of s-expressions parsing the raw content of the source should yield.
     , run :: Solver -> IO ()
+    -- ^ A computation equivalent to sending the raw content of the source to the
+    -- solver.
     }
 
 -- | A list of examples SMT-Lib2 files. Most of them were taken from the official

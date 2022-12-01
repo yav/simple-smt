@@ -1,3 +1,4 @@
+-- | A module providing functions useful for testing a backend for SimpleSMT.
 module SimpleSMT.Tests
   ( testBackend,
     Source(..),

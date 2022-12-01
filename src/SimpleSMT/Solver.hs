@@ -1,6 +1,31 @@
 {-# LANGUAGE OverloadedStrings #-}
 
--- | A module for interacting with an SMT solver, using SmtLib-2 format.
+{-|
+A module for interacting with an SMT solver, using SmtLib-2 format.
+
+A typical use of this module would look like the following.
+@
+import SimpleSMT.SExpr
+import SimpleSMT.Solver
+import qualified myBackend
+import qualified Data.ByteString.Lazy.Char8 as LBS
+import System.IO (putStrLn)
+
+main :: IO ()
+main = do
+  backend <- myBackend.new
+  solver <- initSolverWith backend lazyMode logger
+  setLogic solver "QF_UF"
+  p <- declare solver "p" tBool
+  assert solver $ p `and` not p
+  result <- check solver
+  putStrLn $ "result: " ++ show result
+  myBackend.stop backend
+
+ where lazyMode = True
+       logger = LBS.putStrLn
+@
+-}
 module SimpleSMT.Solver
     -- * Basic Solver Interface
   ( Solver(..)
@@ -45,6 +70,8 @@ import Data.ByteString.Builder (Builder, toLazyByteString, lazyByteString)
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.IORef (IORef, newIORef, atomicModifyIORef)
 
+-- | The type of solver backends. SMTLib2 commands are sent to a backend which
+-- processes them and outputs the solver's response.
 data Backend = Backend {
   send :: Builder -> IO LBS.ByteString
   -- ^ Send a command to the backend.
@@ -65,15 +92,38 @@ flushQueue :: Queue -> IO Builder
 flushQueue q = atomicModifyIORef q $ \cmds ->
     (mempty, cmds)
 
+{-| A solver is essentially a wrapper around a solver backend. It also comes with
+a function for logging the solver's activity, and an optional queue of commands
+to send to the backend.
+
+A solver can either be in eager mode or lazy mode. In eager mode, the queue of
+commands isn't used and the commands are sent to the backend immediately. In
+lazy mode, commands whose output are not strictly necessary for the rest of the
+computation (typically the ones whose output should just be "success") and that
+are sent through 'ackCommand' are not sent to the backend immediately, but
+rather written on the solver's queue. When a command whose output is actually
+necessary needs to be sent, the queue is flushed and sent as a batch to the
+backend.
+
+Lazy mode should be faster as there usually is a non-negligible constant
+overhead in sending a command to the backend. But since the commands are sent by
+batches, a command sent to the solver will only produce an error when the queue
+is flushed, i.e. when a command with interesting output is sent. You thus
+probably want to stick with eager mode when debugging. Moreover, when commands
+are sent by batches, only the last command in the batch may produce an output
+for parsing to work properly. Hence the ":print-success" option is disabled in
+lazy mode, and this should not be overriden manually.
+-}
 data Solver = Solver
   { backend :: Backend
   -- ^ The backend processing the commands.
   , queue :: Maybe Queue
-  -- ^ A queue to write commands that are to be sent to the solver lazily.
+  -- ^ An optional queue to write commands that are to be sent to the solver lazily.
   , log :: LBS.ByteString -> IO ()
   -- ^ The function used for logging the solver's activity.
   }
 
+-- | Send a command in bytestring builder format to the solver.
 sendSolver :: Solver -> Builder -> IO SExpr
 sendSolver solver cmd = do
   log solver $ "[send] " <> toLazyByteString cmd
@@ -89,9 +139,11 @@ sendSolver solver cmd = do
 
 -- | Create a new solver and initialize it with some options so that it behaves
 -- correctly for our use.
+-- In particular, the "print-success" option is disabled in lazy mode. This should
+-- not be overriden manually.
 initSolverWith ::
      Backend
-  -- | whether to enable lazy mode
+  -- | whether to enable lazy mode. See 'Solver' for the meaning of this flag.
   -> Bool
   -- | function for logging the solver's activity
   -> (LBS.ByteString -> IO ())
@@ -321,6 +373,9 @@ check proc = do
         , "  Expected: unsat, unknown, or sat"
         , "  Result: " ++ showsSExpr res ""
         ]
+
+-- | Get assignments.
+-- Only valid after a 'Sat' result
 
 -- | Get the values of some s-expressions.
 -- Only valid after a 'Sat' result.

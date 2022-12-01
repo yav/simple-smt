@@ -3,6 +3,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms   #-}
 {-# LANGUAGE ViewPatterns      #-}
+
+-- | A module providing a backend that launches solvers as external processes.
 module SimpleSMT.Solver.Process
   ( SolverProcess(..)
   , new

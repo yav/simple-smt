@@ -65,10 +65,16 @@ dummy = do
           _ -> return "error"
       ((res <> "\n") <>) <$> process printSuccess exprs
 
+-- | Test a backend by using it to run a list of examples.
 testBackend ::
+  -- | The name of the test group.
      String
+  -- | A list of examples on which to run the backend.
   -> [Src.Source]
+  -- | A function for logging the solver's activity.
   -> (LBS.ByteString -> IO ())
+  -- | A function that should create a backend, run a given
+  -- computation and release the backend's resources.
   -> ((Solver.Backend -> Assertion) -> Assertion)
   -> TestTree
 testBackend name sources logger with =

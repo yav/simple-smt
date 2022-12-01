@@ -203,6 +203,8 @@ ppSExpr = go 0
 
 
 -- | Parse an s-expression.
+-- Currently doesn't work with some edge cases, such as string literals containing
+-- a right parenthesis.
 --
 -- >>> readSExpr "(_ map (- (Int Int) Int)) a1Cl a1Cm)"
 -- Just (List [Atom "_",Atom "map",List [Atom "-",List [Atom "Int",Atom "Int"],Atom "Int"]]," a1Cl a1Cm)")
@@ -257,7 +259,7 @@ pattern (:<) :: Char -> LBS.ByteString -> LBS.ByteString
 pattern c :< rest <- (LBS.uncons -> Just (c, rest))
 
 -- | Parse an s-expression.
--- Like readSExpr but for ByteStrings.
+-- It currently differs with 'readSExpr' in that it parses correctly all edge cases.
 parseSExpr :: LBS.ByteString -> Maybe (SExpr, LBS.ByteString)
 parseSExpr (c :< more) | isSpace c = parseSExpr more
 parseSExpr (';' :< more) = parseSExpr $ LBS.drop 1 $ LBS.dropWhile (/= '\n') more
