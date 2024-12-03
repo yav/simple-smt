@@ -21,6 +21,7 @@ module SimpleSMT
     -- ** Logging and Debugging
   , Logger(..)
   , newLogger
+  , newLoggerWithHandle
   , withLogLevel
   , logMessageAt
   , logIndented
@@ -148,7 +149,8 @@ import Data.Bits(testBit)
 import Data.IORef(newIORef, atomicModifyIORef, modifyIORef', readIORef,
                   writeIORef)
 import System.Process(runInteractiveProcess, waitForProcess, terminateProcess)
-import System.IO (hFlush, hGetLine, hGetContents, hPutStrLn, stdout, hClose)
+import System.IO (Handle, hFlush, hGetLine, hGetContents, hPutStr, hPutStrLn,
+                  stdout, hClose)
 import System.Exit(ExitCode)
 import qualified Control.Exception as X
 import Control.Concurrent(forkIO)
@@ -1038,7 +1040,12 @@ logMessageAt logger l msg = withLogLevel logger l (logMessage logger msg)
 -- | A simple stdout logger.  Shows only messages logged at a level that is
 -- greater than or equal to the passed level.
 newLogger :: Int -> IO Logger
-newLogger l =
+newLogger = newLoggerWithHandle stdout
+
+-- | A simple logger that writes to a 'Handle'. Shows only messages logged at a
+-- level that is greater than or equal to the passed level.
+newLoggerWithHandle :: Handle -> Int -> IO Logger
+newLoggerWithHandle h l =
   do tab <- newIORef 0
      lev <- newIORef 0
      let logLevel    = readIORef lev
@@ -1051,8 +1058,8 @@ newLogger l =
          logMessage x = shouldLog $
            do let ls = lines x
               t <- readIORef tab
-              putStr $ unlines [ replicate t ' ' ++ l | l <- ls ]
-              hFlush stdout
+              hPutStr h $ unlines [ replicate t ' ' ++ l | l <- ls ]
+              hFlush h
 
          logTab   = shouldLog (modifyIORef' tab (+ 2))
          logUntab = shouldLog (modifyIORef' tab (subtract 2))
