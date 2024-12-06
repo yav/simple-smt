@@ -8,6 +8,13 @@ module SimpleSMT
     Solver(..)
   , newSolver
   , newSolverNotify
+  , newSolverWithConfig
+  , Config(..)
+  , SolverLogger(..)
+  , defaultConfig
+  , noSolverLogger
+  , heraldSolverLogger
+  , smtSolverLogger
   , ackCommand
   , simpleCommand
   , simpleCommandMaybe
@@ -282,7 +289,10 @@ newSolver :: String       {- ^ Executable -}            ->
              [String]     {- ^ Arguments -}             ->
              Maybe Logger {- ^ Optional logging here -} ->
              IO Solver
-newSolver n xs l = newSolverNotify n xs l Nothing
+newSolver exe opts mbLog = newSolverWithConfig $
+  (defaultConfig exe opts)
+    { solverLogger = maybe noSolverLogger heraldSolverLogger mbLog
+    }
 
 newSolverNotify ::
   String        {- ^ Executable -}            ->
@@ -290,15 +300,24 @@ newSolverNotify ::
   Maybe Logger  {- ^ Optional logging here -} ->
   Maybe (ExitCode -> IO ()) {- ^ Do this when the solver exits -} ->
   IO Solver
-newSolverNotify exe opts mbLog mbOnExit =
+newSolverNotify exe opts mbLog mbOnExit = newSolverWithConfig $
+  (defaultConfig exe opts)
+    { solverOnExit = mbOnExit
+    , solverLogger = maybe noSolverLogger heraldSolverLogger mbLog
+    }
+
+-- | Start a new solver process using the provided 'Config' options.
+newSolverWithConfig :: Config -> IO Solver
+newSolverWithConfig
+  (Config { solverExecutable = exe
+          , solverArguments = opts
+          , solverOnExit = mbOnExit
+          , solverLogger = log
+          }) =
   do (hIn, hOut, hErr, h) <- runInteractiveProcess exe opts Nothing Nothing
 
-     let info a = case mbLog of
-                    Nothing -> return ()
-                    Just l  -> logMessage l a
-
      _ <- forkIO $ forever (do errs <- hGetLine hErr
-                               info ("[stderr] " ++ errs))
+                               solverLogStdErr log errs)
                     `X.catch` \X.SomeException {} -> return ()
 
      case mbOnExit of
@@ -314,7 +333,7 @@ newSolverNotify exe opts mbLog mbOnExit =
                         y : ys -> (ys, Just y)
 
      let cmd c = do let txt = showsSExpr c ""
-                    info ("[send->] " ++ txt)
+                    solverLogSend log c
                     hPutStrLn hIn txt
                     hFlush hIn
 
@@ -322,7 +341,7 @@ newSolverNotify exe opts mbLog mbOnExit =
            do cmd c
               mb <- getResponse
               case mb of
-                Just res -> do info ("[<-recv] " ++ showsSExpr res "")
+                Just res -> do solverLogRecv log res
                                return res
                 Nothing  -> fail "Missing response from solver"
 
@@ -331,7 +350,7 @@ newSolverNotify exe opts mbLog mbOnExit =
               X.catch (do hClose hIn
                           hClose hOut
                           hClose hErr)
-                      (\ex -> info (show (ex::X.IOException)))
+                      (solverLogExcn log)
               return ec
 
          forceStop = terminateProcess h *> waitAndCleanup
@@ -348,6 +367,72 @@ newSolverNotify exe opts mbLog mbOnExit =
 
      return solver
 
+-- | Options for configuring how to start, stop, and interact with an SMT
+-- solver process.
+data Config = Config
+  { solverExecutable :: String
+    -- ^ The SMT solver executable.
+  , solverArguments :: [String]
+    -- ^ The command-line arguments to pass to the SMT solver.
+  , solverOnExit :: Maybe (ExitCode -> IO ())
+    -- ^ Do this when the SMT solver exits.
+  , solverLogger :: SolverLogger
+    -- ^ How to log solver-related messages.
+  }
+
+-- | Options for logging SMT solver–related messages.
+data SolverLogger = SolverLogger
+  { solverLogSend :: SExpr -> IO ()
+    -- ^ Log an SMT query ('SExpr') being sent to the SMT solver.
+  , solverLogRecv :: SExpr -> IO ()
+    -- ^ Log a response ('SExpr') being received from the SMT solver.
+  , solverLogExcn :: X.IOException -> IO ()
+    -- ^ Log the SMT solver throwing an 'X.IOException'.
+  , solverLogStdErr :: String -> IO ()
+    -- ^ Log the SMT solver displaying an error to @stderr@.
+  }
+
+-- | A reasonable default 'Config' value.
+defaultConfig ::
+  String   {- ^ Solver executable -} ->
+  [String] {- ^ Solver arguments -}  ->
+  Config
+defaultConfig exe opts = Config
+  { solverExecutable = exe
+  , solverArguments = opts
+  , solverOnExit = Nothing
+  , solverLogger = noSolverLogger
+  }
+
+-- | A trivial 'SolverLogger' that does not perform any logging.
+noSolverLogger :: SolverLogger
+noSolverLogger = SolverLogger
+  { solverLogSend = \_ -> pure ()
+  , solverLogRecv = \_ -> pure ()
+  , solverLogExcn = \_ -> pure ()
+  , solverLogStdErr = \_ -> pure ()
+  }
+
+-- | A basic 'SolverLogger' that prints out heralds in front of sent and
+-- received SMT queries, as well as messages to @stderr@. This is the approach
+-- that 'newSolver' and 'newSolverNotify' use for logging.
+heraldSolverLogger :: Logger -> SolverLogger
+heraldSolverLogger l = SolverLogger
+  { solverLogSend = \c -> logMessage l ("[send->] " ++ showsSExpr c "")
+  , solverLogRecv = \c -> logMessage l ("[<-recv] " ++ showsSExpr c "")
+  , solverLogExcn = \exc -> logMessage l (show exc)
+  , solverLogStdErr = \errs -> logMessage l ("[stderr] " ++ errs)
+  }
+
+-- | A 'SolverLogger' that formats log messages into the SMT-LIB file format so
+-- that the resulting log can be parsed as input by an SMT solver.
+smtSolverLogger :: Logger -> SolverLogger
+smtSolverLogger l = SolverLogger
+  { solverLogSend = \c -> logMessage l (showsSExpr c "")
+  , solverLogRecv = \c -> logMessage l ("; " ++ showsSExpr c "")
+  , solverLogExcn = \exc -> logMessage l (show exc)
+  , solverLogStdErr = \errs -> logMessage l errs
+  }
 
 -- | Load the contents of a file.
 loadFile :: Solver -> FilePath -> IO ()
