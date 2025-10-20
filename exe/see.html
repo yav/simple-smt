@@ -1,0 +1,194 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+body {
+  font-family: monospace;
+}
+
+.menu {
+  display: flex;
+  flex-direction: row;
+  border-bottom: 1px solid black;
+  width: fit-content;
+  margin-bottom: 1em;
+}
+
+.menu_entry {
+  cursor: pointer;
+  margin: 0.2em 1em 0.2em 1em;
+  font-size: smaller;
+}
+
+.title {
+  cursor: pointer;
+}
+
+.children {
+  padding-left: 1em;
+}
+
+.has-diffs>.title {
+  background-color: #eee;
+}
+
+.node.diff {
+  display: block;
+  width: fit-content;
+  background-color: #eee;
+  margin: 0.2em;
+}
+
+.node.diff>.children {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  column-gap: 2em;
+  padding-right: 2em;
+  padding-bottom: 1em;
+}
+
+.node.diff>.children>div:first-child {
+  padding-right: 2em;
+  border-right: 1px solid black;
+}
+
+.hidden {
+  display: none !important;
+}
+
+</style>
+<script>
+function div(c) {
+  const dom = document.createElement("div")
+  dom.classList.add(c)
+  return dom
+}
+
+function drawNode(startOpen, labClosed, labOpen, cs) {
+  const closed = "▸ "
+  const open   = "▾ "
+  const dom = div("node")
+  const tit = div("title")
+  const chi = div("children")
+  for (const c of cs) {
+    chi.appendChild(c)
+  }
+  dom.append(tit,chi)
+  
+
+  let isOpen = startOpen 
+
+  function setMode() {
+    if (isOpen) {
+      tit.textContent = open + labOpen
+      chi.classList.remove("hidden")
+    } else {
+      tit.textContent = closed + labClosed
+      chi.classList.add("hidden")
+    }
+  }
+
+  tit.addEventListener("click", function() {
+    isOpen = !isOpen
+    setMode()
+  })
+
+  setMode()
+  return [ dom, (open) => { isOpen = open; setMode() } ]
+}
+
+function shortLabel(ctx, t) {
+  const def = ctx[t]
+  const shape = def.shape
+  switch (shape.tag) {
+    case 'con': return shape.fun
+    case 'app': return (def.count > 1? ("🔗" + t) : "(...)")
+    case 'tup':
+      if (args.len == 0) return "()"
+      return def.count > 1? ("🔗" + t) : "(...)"
+    case 'diff': return "(...)"
+  }
+}
+
+function drawTerm(nodes, ctx, t) {
+  
+  const def = ctx[t]
+  const shape = def.shape
+
+  function leaf(x) {
+    const dom = div("leaf")
+    dom.textContent = x
+    return dom
+  }
+
+  if (shape.tag == "con") return leaf(shape.fun)
+
+  const name = def.count > 1? ("🔗" + t + ": ") : ""
+  const fun = shape.fun? shape.fun: 
+              shape.tag == 'tup'? "()" : "❌"
+  let labOpen = name + fun
+  let labClosed = name + fun
+  const cs = []
+  let force_long = false
+  for (a of shape.args) {
+    labClosed += " " + shortLabel(ctx, a)
+    const c = ctx[a].shape
+    if (!force_long && shape.tag !== "diff" && c.tag === "con") {
+      labOpen += " " + c.fun
+    } else {
+      force_long = true
+      cs.push(drawTerm(nodes, ctx,a))
+    }
+  }
+  if (cs.length == 0) return leaf(labClosed)
+
+  const [dom, setMode] = drawNode(def.diff, labClosed, labOpen, cs)
+  nodes[t] = setMode
+  dom.classList.add(shape.tag)
+  // if (def.diff) dom.classList.add("has-diffs")
+  return dom
+}
+
+function drawMenus(terms) {
+  let nodes = {}
+  const dom = div("menu")
+
+  const expand_all = div("menu_entry")
+  expand_all.textContent = "Expand All"
+  expand_all.addEventListener("click", () => {
+    for (const t in nodes) nodes[t](true)
+  })
+
+  const collapse_all = div("menu_entry")
+  collapse_all.textContent = "Collapse All"
+  collapse_all.addEventListener("click", () => {
+    for (const t in nodes) nodes[t](false)
+  })
+
+  const only_diffs = div("menu_entry")
+  only_diffs.textContent = "Only Diffs"
+  only_diffs.addEventListener("click", () => {
+    for (const t in nodes) nodes[t](terms[t].diff)
+  })
+
+  dom.append(expand_all, collapse_all, only_diffs)
+  return [dom, nodes]
+}
+
+async function main() {
+  const file = new URLSearchParams(window.location.search).get("file")
+  const response = await fetch(file)
+  if (!response.ok) {
+    throw new Error(`Failed to get file "${file}" (${response.status})`)
+  }
+  const { root, terms } = await response.json()
+  const body = document.getElementById("body")
+  const [menu,nodes] = drawMenus(terms)
+  body.append(menu, drawTerm(nodes, terms, root))
+}
+</script>
+</head>
+<body id="body" onload="main()"></body>
+</html>

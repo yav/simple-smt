@@ -19,11 +19,11 @@ library
                        process
   default-language:    Haskell2010
 
-executable diff-smt-eq
+executable diff-sexp
   default-language: Haskell2010
-  main-is: DiffSMT.hs
+  main-is: DiffSEXp.hs
   hs-source-dirs: exe
-  build-depends: base, containers, simple-smt
+  build-depends: base, containers, simple-smt, simple-get-opt
 
 source-repository head
   type: git

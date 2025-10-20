@@ -6,18 +6,74 @@ import Data.IntMap(IntMap)
 import qualified Data.IntMap as IntMap
 import Data.List(mapAccumL, foldl')
 import Data.Char(isSpace)
+import SimpleGetOpt
 import SimpleSMT(SExpr(..), readSExpr)
 
+data Options = Options {
+  optSplitOn :: [String],
+  optShowHelp :: Bool
+}
+
+
+options :: OptSpec Options
+options = optSpec {
+  progDescription = ["Compute a diff on sub-expressions of S-expressions"],
+  progOptions = [
+    Option ['s'] ["split"]
+    "Split terms on the given symbol"
+    $ ReqArg "ATOM" $ \a s -> Right s { optSplitOn = a : optSplitOn s },
+    Option ['h'] ["help"]
+    "Show help"
+    $ NoArg $ \s -> Right s { optShowHelp = True }
+  ]
+}
+
+defaultOptions :: Options
+defaultOptions = Options {
+  optSplitOn  = ["=", "bvEq"],
+  optShowHelp = False 
+}
+
 main :: IO ()
-main = interact $ \txt ->
-  case readSExpr txt of
-    Just (sexp,rest) | all isSpace rest ->
-      case fromSExp emptyCtx sexp of
-        (ctx, t0@Term { termF = App "=" [x,y] }) ->
-          let (_, d) = diff ctx x y in
-          toJS (toBinds mempty d) d
-        _ -> error "S-expression is not an equality"
-    _ -> error "malformed S-expression"
+main =
+  do
+    opts <- getOpts defaultOptions options
+    if optShowHelp opts then dumpUsage options else
+      interact $ \txt ->
+      case readSExpr txt of
+        Just (sexp,rest) | all isSpace rest ->
+          case fromSExp emptyCtx sexp of
+            (ctx, tm) | (_, d) <- diffEq (optSplitOn opts) ctx tm ->
+              toJS (toBinds mempty d) d
+        _ -> error "malformed S-expression"
+
+diffEq :: [String] -> TermCtx -> Term -> (TermCtx, Term)
+diffEq isEq = go
+  where
+  go ctx t =
+    case termF t of
+      Con {} -> (ctx, t)
+      Diff {} -> (ctx, t) -- shouldn't happen
+
+      App a args
+        | a `elem` isEq,
+          Just (as,x,y) <- lastTwo [] args,
+          let (ctx1, d) = diff ctx x y ->
+          fromShp ctx1 (App a (as ++ [d]))
+        | otherwise -> goMany ctx (App a) args
+      Tup args -> goMany ctx Tup args
+  
+  goMany ctx f ts =
+    case mapAccumL go ctx ts of
+      (ctx1, ts1) -> fromShp ctx1 (f ts1)
+
+  lastTwo acc xs =
+    case xs of
+      [x,y] -> Just (reverse acc, x, y)
+      x : rest -> lastTwo (x : acc) rest
+      [] -> Nothing
+
+
 
 
 data TermCtx = TermCtx {
@@ -122,22 +178,27 @@ type JS = String
 
 toJS :: Binds -> Term -> JS
 toJS bs t = unlines $ [
-  "{ \"root\": " ++ tid t ++ ",",
+  "{ \"root\": " ++ show (tid t) ++ ",",
   "  \"terms\": {"
   ] ++
-  [ l | b <- IntMap.elems bs, l <- bind b ] ++ 
+  [ l | let n = IntMap.size bs,
+        (b,isL) <- zip (replicate (n-1) False ++ [True])
+                 (IntMap.elems bs),
+        l <- bind b isL ] ++ 
   [
-  "  }"
+  "  }",
+  "}"
   ]
   where
   tid x = "t" ++ show (termId x)
-  bind b =
+  bind isLast b =
     let t = def b
     in [
-         "  " ++ tid t ++ ": {",
+         "  " ++ show (tid t) ++ ": {",
          "    \"diff\": " ++ (if hasDiff b then "true" else "false") ++ ",",
-         "    \"count\": " ++ show (count b),
-         "    \"shape\": " ++ toShape t
+         "    \"count\": " ++ show (count b) ++ ",",
+         "    \"shape\": " ++ toShape t,
+         "  }" ++ if isLast then "" else ","
        ]
   toShape t =
     case termF t of
