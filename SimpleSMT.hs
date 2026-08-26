@@ -160,8 +160,9 @@ import System.IO (Handle, hFlush, hGetLine, hGetContents, hPutStr, hPutStrLn,
                   stdout, hClose)
 import System.Exit(ExitCode)
 import qualified Control.Exception as X
-import Control.Concurrent(forkIO)
-import Control.Monad(forever,when,void)
+import Control.Concurrent(forkFinally, forkIO)
+import Control.Concurrent.MVar(newEmptyMVar, putMVar, readMVar)
+import Control.Monad(forever,when)
 import Text.Read(readMaybe)
 import Data.Ratio((%), numerator, denominator)
 import Numeric(showHex, readHex, showFFloat)
@@ -277,10 +278,12 @@ data Solver = Solver
     -- ^ Send a command to the solver.
 
   , stop :: IO ExitCode
-    -- ^ Wait for the solver to finish and exit gracefully.
+    -- ^ Ask the solver to exit gracefully and wait for it and any configured
+    -- 'solverOnExit' action to finish.
 
   , forceStop :: IO ExitCode
-    -- ^ Terminate the solver without waiting for it to finish.
+    -- ^ Terminate the solver and wait for it and any configured
+    -- 'solverOnExit' action to finish.
   }
 
 
@@ -320,10 +323,6 @@ newSolverWithConfig
                                solverLogStdErr log errs)
                     `X.catch` \X.SomeException {} -> return ()
 
-     case mbOnExit of
-       Nothing -> pure ()
-       Just this -> void (forkIO (this =<< waitForProcess h))
-
      getResponse <-
        do txt <- hGetContents hOut                  -- Read *all* output
           ref <- newIORef (unfoldr readSExpr txt)  -- Parse, and store result
@@ -345,20 +344,31 @@ newSolverWithConfig
                                return res
                 Nothing  -> fail "Missing response from solver"
 
-         waitAndCleanup =
+         cleanup =
+           X.catch (do hClose hIn
+                       hClose hOut
+                       hClose hErr)
+                   (solverLogExcn log)
+
+         observeExit =
            do ec <- waitForProcess h
-              X.catch (do hClose hIn
-                          hClose hOut
-                          hClose hErr)
-                      (solverLogExcn log)
+              (case mbOnExit of
+                 Nothing -> pure ()
+                 Just this -> this ec)
+                `X.finally` cleanup
               return ec
 
-         forceStop = terminateProcess h *> waitAndCleanup
+     exitResult <- newEmptyMVar
+     _ <- forkFinally observeExit (putMVar exitResult)
+
+     let waitForExit = either X.throwIO pure =<< readMVar exitResult
+
+         forceStop = terminateProcess h *> waitForExit
 
          stop =
            do cmd (List [Atom "exit"])
                 `X.catch` (\X.SomeException{} -> pure ())
-              waitAndCleanup
+              waitForExit
 
          solver = Solver { .. }
 
@@ -375,7 +385,8 @@ data Config = Config
   , solverArguments :: [String]
     -- ^ The command-line arguments to pass to the SMT solver.
   , solverOnExit :: Maybe (ExitCode -> IO ())
-    -- ^ Do this when the SMT solver exits.
+    -- ^ Do this when the SMT solver exits.  'stop' and 'forceStop' wait for
+    -- this action to finish before returning.
   , solverLogger :: SolverLogger
     -- ^ How to log solver-related messages.
   }
