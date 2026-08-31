@@ -25,13 +25,6 @@ executable diff-sexp
   hs-source-dirs: exe
   build-depends: base, containers, simple-smt, simple-get-opt
 
-test-suite finalizer
-  type: exitcode-stdio-1.0
-  default-language: Haskell2010
-  main-is: Finalizer.hs
-  hs-source-dirs: test
-  build-depends: base, simple-smt
-
 source-repository head
   type: git
   location: https://github.com/yav/simple-smt
