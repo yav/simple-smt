@@ -166,6 +166,7 @@ import Control.Monad(forever,when)
 import Text.Read(readMaybe)
 import Data.Ratio((%), numerator, denominator)
 import Numeric(showHex, readHex, showFFloat)
+import System.Mem.Weak(addFinalizer)
 
 
 -- | Results of checking for satisfiability.
@@ -319,63 +320,75 @@ newSolverWithConfig
           }) =
   do (hIn, hOut, hErr, h) <- runInteractiveProcess exe opts Nothing Nothing
 
+     -- Drain stderr
      _ <- forkIO $ forever (do errs <- hGetLine hErr
                                solverLogStdErr log errs)
                     `X.catch` \X.SomeException {} -> return ()
 
-     getResponse <-
-       do txt <- hGetContents hOut                  -- Read *all* output
-          ref <- newIORef (unfoldr readSExpr txt)  -- Parse, and store result
-          return $ atomicModifyIORef ref $ \xs ->
-                      case xs of
-                        []     -> (xs, Nothing)
-                        y : ys -> (ys, Just y)
+     -- Parse responses (lazy)
+     txt <- hGetContents hOut                       -- Read *all* output
+     responses <- newIORef (unfoldr readSExpr txt) -- Parse, and store result
 
-     let cmd c = do let txt = showsSExpr c ""
-                    solverLogSend log c
-                    hPutStrLn hIn txt
-                    hFlush hIn
-
-         command c =
-           do cmd c
-              mb <- getResponse
-              case mb of
-                Just res -> do solverLogRecv log res
-                               return res
-                Nothing  -> fail "Missing response from solver"
-
-         cleanup =
-           X.catch (do hClose hIn
-                       hClose hOut
-                       hClose hErr)
-                   (solverLogExcn log)
-
-         observeExit =
-           do ec <- waitForProcess h
-              (case mbOnExit of
-                 Nothing -> pure ()
-                 Just this -> this ec)
-                `X.finally` cleanup
-              return ec
-
+     -- Wait for the solver to exit
      exitResult <- newEmptyMVar
-     _ <- forkFinally observeExit (putMVar exitResult)
+     _ <- forkFinally
+            (observeExit h hIn hOut hErr)
+            (putMVar exitResult)
 
-     let waitForExit = either X.throwIO pure =<< readMVar exitResult
+     -- Close `stdin` when the Haskell Solver object is GC-ed, so that
+     -- we close `stdin` and the solver process exits.
+     addFinalizer responses (closeHandle hIn)
 
-         forceStop = terminateProcess h *> waitForExit
-
-         stop =
-           do cmd (List [Atom "exit"])
-                `X.catch` (\X.SomeException{} -> pure ())
-              waitForExit
-
-         solver = Solver { .. }
+     let solver =
+           Solver
+             { command = runCommand hIn responses
+             , stop = stopSolver hIn exitResult
+             , forceStop = forceStopSolver h exitResult
+             }
 
      setOption solver ":print-success" "true"
      setOption solver ":produce-models" "true"
 
      return solver
+  where
+  send hIn c =
+    do let txt = showsSExpr c ""
+       solverLogSend log c
+       hPutStrLn hIn txt
+       hFlush hIn
+
+  runCommand hIn responses c =
+    do send hIn c
+       mb <- atomicModifyIORef responses $ \xs ->
+               case xs of
+                 []     -> (xs, Nothing)
+                 y : ys -> (ys, Just y)
+       case mb of
+         Just res -> do solverLogRecv log res
+                        return res
+         Nothing  -> fail "Missing response from solver"
+
+  closeHandle handle =
+    X.catch (hClose handle) (solverLogExcn log)
+
+  observeExit h hIn hOut hErr =
+    do ec <- waitForProcess h
+       (case mbOnExit of
+          Nothing -> pure ()
+          Just this -> this ec)
+         `X.finally` mapM_ closeHandle [hIn, hOut, hErr]
+       return ec
+
+  waitForExit exitResult =
+    either X.throwIO pure =<< readMVar exitResult
+
+  forceStopSolver h exitResult =
+    terminateProcess h *> waitForExit exitResult
+
+  stopSolver hIn exitResult =
+    do send hIn (List [Atom "exit"])
+         `X.catch` (\X.SomeException{} -> pure ())
+       waitForExit exitResult
 
 -- | Options for configuring how to start, stop, and interact with an SMT
 -- solver process.
