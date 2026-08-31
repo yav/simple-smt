@@ -166,7 +166,9 @@ import Control.Monad(forever,when)
 import Text.Read(readMaybe)
 import Data.Ratio((%), numerator, denominator)
 import Numeric(showHex, readHex, showFFloat)
-import System.Mem.Weak(addFinalizer)
+import Foreign.Concurrent(newForeignPtr)
+import Foreign.ForeignPtr(withForeignPtr)
+import Foreign.Ptr(nullPtr)
 
 
 -- | Results of checking for satisfiability.
@@ -337,13 +339,13 @@ newSolverWithConfig
 
      -- Close `stdin` when the Haskell Solver object is GC-ed, so that
      -- we close `stdin` and the solver process exits.
-     addFinalizer responses (closeHandle hIn)
+     finalizer <- newForeignPtr nullPtr (closeHandle hIn)
 
      let solver =
            Solver
-             { command = runCommand hIn responses
-             , stop = stopSolver hIn exitResult
-             , forceStop = forceStopSolver h exitResult
+             { command = keepAlive finalizer . runCommand hIn responses
+             , stop = keepAlive finalizer (stopSolver hIn exitResult)
+             , forceStop = keepAlive finalizer (forceStopSolver h exitResult)
              }
 
      setOption solver ":print-success" "true"
@@ -389,6 +391,9 @@ newSolverWithConfig
     do send hIn (List [Atom "exit"])
          `X.catch` (\X.SomeException{} -> pure ())
        waitForExit exitResult
+
+  keepAlive finalizer action =
+    withForeignPtr finalizer (\_ -> action)
 
 -- | Options for configuring how to start, stop, and interact with an SMT
 -- solver process.
